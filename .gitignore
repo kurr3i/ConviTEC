@@ -1,0 +1,48 @@
+# Compilación
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+publish/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+# Pruebas y cobertura
+TestResults/
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+
+# Logs y temporales
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Datos locales de cada sede (se generan al ejecutar)
+# Se conserva data/grafo.json porque es un dato de entrada del proyecto
+data/*/
+
+# Configuración local con IPs o credenciales propias de cada equipo
+config/*.local.json
+appsettings.Development.json
+secrets.json
