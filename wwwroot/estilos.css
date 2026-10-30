@@ -1,0 +1,42 @@
+:root{--tinta:#12234a;--acento:#f47b20;--fondo:#f4f6fa;--panel:#fff;--borde:#dde3ee;--texto:#1d2433;--suave:#5d6a85;--ok:#1f8a5b;--mal:#c0392b;--aviso:#b7791f}
+@media (prefers-color-scheme:dark){:root{--fondo:#0e1424;--panel:#172038;--borde:#2a3556;--texto:#e8ecf6;--suave:#9aa7c7;--tinta:#0a1020}}
+*{box-sizing:border-box}
+body{margin:0;display:grid;grid-template-columns:240px 1fr;min-height:100vh;font:15px/1.5 Figtree,system-ui,sans-serif;background:var(--fondo);color:var(--texto)}
+aside{background:var(--tinta);color:#fff;padding:24px 16px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:20px}
+.marca{font-size:26px;font-weight:500;letter-spacing:-.5px}.marca b{font-weight:800;color:var(--acento)}
+.sede{background:rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column}
+.sede small{color:#aab6d6}
+nav{display:flex;flex-direction:column;gap:2px}
+nav button{background:none;border:0;color:#c9d2ea;text-align:left;padding:9px 12px;border-radius:8px;font:inherit;cursor:pointer}
+nav button:hover{background:rgba(255,255,255,.08)}
+nav button.on{background:var(--acento);color:#fff;font-weight:700}
+main{padding:28px 36px;max-width:1100px;width:100%}
+h1{margin:0 0 20px;font-size:28px;letter-spacing:-.5px}
+h2{font-size:17px;margin:24px 0 10px}
+.panel{background:var(--panel);border:1px solid var(--borde);border-radius:10px;padding:16px;margin-bottom:16px;overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--borde);vertical-align:top}
+th{font-weight:700;color:var(--suave);font-size:13px}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.vacio{color:var(--suave);padding:20px;text-align:center}
+.fila{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--suave);font-weight:500}
+input,select{font:inherit;padding:8px 10px;border:1px solid var(--borde);border-radius:8px;background:var(--panel);color:var(--texto);min-width:140px}
+button.b{font:inherit;font-weight:700;background:var(--acento);color:#fff;border:0;border-radius:8px;padding:9px 16px;cursor:pointer}
+button.b.sec{background:none;color:var(--texto);border:1px solid var(--borde)}
+button.b:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--acento);outline-offset:2px}
+.tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;background:var(--borde);color:var(--texto)}
+.tag.Entregado{background:#d6f1e4;color:var(--ok)}.tag.Pendiente,.tag.Confirmado{background:#fdebc8;color:var(--aviso)}.tag.Cancelado,.tag.Rechazado{background:#f8d9d5;color:var(--mal)}
+.msg{padding:12px 14px;border-radius:8px;margin:12px 0;font-weight:500}
+.msg.ok{background:#d6f1e4;color:#14573a}.msg.mal{background:#f8d9d5;color:#8a2417}
+.ruta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
+.ruta span{background:var(--tinta);color:#fff;padding:4px 10px;border-radius:6px;font-size:13px}
+.ruta span.fin{background:var(--acento)}.ruta i{color:var(--suave);font-style:normal}
+.cifra{font-size:30px;font-weight:800;letter-spacing:-1px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+#toast{position:fixed;bottom:20px;right:20px;background:var(--tinta);color:#fff;padding:12px 18px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:360px}
+#toast.on{opacity:1}#toast.err{background:var(--mal)}
+@media(max-width:760px){body{grid-template-columns:1fr}aside{position:static;height:auto}nav{flex-direction:row;flex-wrap:wrap}main{padding:18px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
