@@ -1,0 +1,8 @@
+{
+  "codigo": "SJO",
+  "nombre": "San José",
+  "puerto": 5003,
+  "rabbitHost": "localhost",
+  "carpetaDatos": "data/sanjose",
+  "sedes": ["LIB", "ALA", "SJO", "LIM"]
+}

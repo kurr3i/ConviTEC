@@ -1,0 +1,8 @@
+{
+  "codigo": "LIM",
+  "nombre": "Limón",
+  "puerto": 5004,
+  "rabbitHost": "localhost",
+  "carpetaDatos": "data/limon",
+  "sedes": ["LIB", "ALA", "SJO", "LIM"]
+}
