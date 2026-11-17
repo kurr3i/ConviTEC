@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using RabbitMQ.Client;
+using ConviTEC.Modelo;
 using RabbitMQ.Client.Events;
  
 namespace ConviTEC.Mensajeria
@@ -22,6 +23,11 @@ namespace ConviTEC.Mensajeria
         // Evita que dos hilos publiquen a la vez por el mismo canal
         private readonly SemaphoreSlim _bloqueoPublicar = new(1, 1);
         
+        // Un manejador por tipo de mensaje. Es un arreglo indexado por el valor del enum
+        // (no se usa Dictionary porque las colecciones deben ser propias o arreglos nativos).
+        private readonly Func<Mensaje, Task>?[] _manejadores =
+            new Func<Mensaje, Task>?[Enum.GetValues<TipoMensaje>().Length];
+
         public BusSedes(string codigoSede, string[] todasLasSedes,
                         string host, string usuario, string clave)
         {
