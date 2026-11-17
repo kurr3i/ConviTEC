@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ConviTEC.Mensajeria;
+using ConviTEC.Modelo;
 
 namespace ConviTEC
 {
@@ -61,6 +62,13 @@ namespace ConviTEC
 
             // Endpoints REST
             app.MapGet("/api/estado", () => Results.Ok(new { sede, puerto }));
+
+            app.MapPost("/api/ping/{destino}", async (string destino) =>
+            {
+                var mensaje = Mensaje.Crear(TipoMensaje.Ping, codigoSede, destino, $"hola desde {codigoSede}");
+                await bus.EnviarAsync(mensaje);
+                return Results.Ok(new { enviado = true, destino });
+            });
 
             // catálogo e inventario  -> /api/catalogo, /api/inventario
             // pedidos                -> /api/pedidos, /api/pedidos/pendientes
