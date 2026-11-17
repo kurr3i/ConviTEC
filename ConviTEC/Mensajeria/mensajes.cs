@@ -67,4 +67,50 @@ namespace ConviTEC.Modelo
             return JsonSerializer.Deserialize<T>(Contenido, Opciones);
         }
     }
+
+    // ---------- Contenidos de cada tipo de mensaje ----------
+    // Las listas son arreglos nativos (permitidos) para que se serialicen a JSON sin problema.
+
+    // Un producto con una cantidad (se reutiliza en reservas y en el inventario)
+    public class ItemCantidad
+    {
+        public string CodigoProducto { get; set; } = "";
+        public int Cantidad { get; set; }
+    }
+
+    public class SolicitudReserva
+    {
+        public string IdPedido { get; set; } = "";
+        public ItemCantidad[] Items { get; set; } = [];
+    }
+
+    public class RespuestaReserva
+    {
+        public string IdPedido { get; set; } = "";
+        public bool Aceptada { get; set; }
+
+        // Lo que realmente se reservó de cada producto
+        public ItemCantidad[] Reservados { get; set; } = [];
+
+        // Si se rechazó, la explicación
+        public string? Motivo { get; set; }
+    }
+
+    public class ConfirmarReserva
+    {
+        public string IdPedido { get; set; } = "";
+    }
+
+    public class LiberarReserva
+    {
+        public string IdPedido { get; set; } = "";
+    }
+
+    public class SincronizarInventario
+    {
+        // Sede dueña de este inventario
+        public string Sede { get; set; } = "";
+        public ItemCantidad[] Inventario { get; set; } = [];
+    }
+    
 }
