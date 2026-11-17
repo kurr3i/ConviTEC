@@ -47,6 +47,14 @@ namespace ConviTEC
 
             // Inicializar el bus de mensajes (RabbitMQ)
             await using var bus = new BusSedes(codigoSede, sedes, rabbitHost, rabbitUsuario, rabbitClave);
+            
+            // Suscribir un manejador para el tipo de mensaje Ping (solo para pruebas)
+            bus.Suscribir(TipoMensaje.Ping, mensaje =>
+            {
+                Console.WriteLine($"[{codigoSede}] Ping de {mensaje.Origen}: {mensaje.ObtenerContenido<string>()}");
+                return Task.CompletedTask;
+            });
+            
             await bus.IniciarAsync();
 
 
