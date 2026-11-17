@@ -1,4 +1,6 @@
 using System.Text.Json;
+using ConviTEC.Mensajeria;
+using ConviTEC.Modelo;
 
 namespace ConviTEC
 {
@@ -22,14 +24,43 @@ namespace ConviTEC
                 return;
             }
 
+            // Cargar la configuración de la sede desde el archivo JSON
             using var config = JsonDocument.Parse(File.ReadAllText(rutaConfig));
             int puerto = config.RootElement.GetProperty("puerto").GetInt32();
             builder.WebHost.UseUrls($"http://0.0.0.0:{puerto}");
 
-            // cargar el resto de la configuración (código, rabbitHost, carpetaDatos)
+            // Cargar la configuración de la sede
+            string codigoSede = config.RootElement.GetProperty("codigo").GetString()!;
+            string rabbitHost = config.RootElement.GetProperty("rabbitHost").GetString()!;
+
+            // Lista de sedes desde el config: "sedes": ["LIB", "ALA", "SJO", "LIM"]
+            var elementosSedes = config.RootElement.GetProperty("sedes");
+            string[] sedes = new string[elementosSedes.GetArrayLength()];
+
+            int indice = 0;
+            foreach (var elemento in elementosSedes.EnumerateArray())
+                sedes[indice++] = elemento.GetString()!;
+
+            // Usuario y clave desde variables de entorno
+            string rabbitUsuario = builder.Configuration["RABBIT_USUARIO"] ?? "convitec";
+            string rabbitClave = builder.Configuration["RABBIT_CLAVE"] ?? "";
+
+            // Inicializar el bus de mensajes (RabbitMQ)
+            await using var bus = new BusSedes(codigoSede, sedes, rabbitHost, rabbitUsuario, rabbitClave);
+            
+            // Suscribir un manejador para el tipo de mensaje Ping (solo para pruebas)
+            bus.Suscribir(TipoMensaje.Ping, mensaje =>
+            {
+                Console.WriteLine($"[{codigoSede}] Ping de {mensaje.Origen}: {mensaje.ObtenerContenido<string>()}");
+                return Task.CompletedTask;
+            });
+            
+            await bus.IniciarAsync();
+
+
+            // cargar el resto de la configuración (carpetaDatos)
             // crear la carpeta de datos de la sede si no existe
             // recuperar el estado desde los archivos (Repositorio)
-            // crear los servicios e iniciar la conexión con RabbitMQ (BusSedes)
 
             var app = builder.Build();
 
@@ -39,6 +70,13 @@ namespace ConviTEC
 
             // Endpoints REST
             app.MapGet("/api/estado", () => Results.Ok(new { sede, puerto }));
+
+            app.MapPost("/api/ping/{destino}", async (string destino) =>
+            {
+                var mensaje = Mensaje.Crear(TipoMensaje.Ping, codigoSede, destino, $"hola desde {codigoSede}");
+                await bus.EnviarAsync(mensaje);
+                return Results.Ok(new { enviado = true, destino });
+            });
 
             // catálogo e inventario  -> /api/catalogo, /api/inventario
             // pedidos                -> /api/pedidos, /api/pedidos/pendientes
