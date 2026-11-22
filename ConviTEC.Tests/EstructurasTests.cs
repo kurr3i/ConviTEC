@@ -183,4 +183,93 @@ namespace ConviTEC.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => grafo.ObtenerPeso(0, 5));
         }
     }
+
+    public class ColaPrioridadTests
+    {
+        [Fact]
+        public void ColaNueva_EstaVacia()
+        {
+            var cola = new ColaPrioridad<string>();
+
+            Assert.True(cola.EstaVacia);
+            Assert.Equal(0, cola.Cantidad);
+        }
+
+        [Fact]
+        public void ColaVacia_DesencolarOVerMinimo_Lanza()
+        {
+            var cola = new ColaPrioridad<string>();
+
+            Assert.Throws<InvalidOperationException>(() => cola.Desencolar());
+            Assert.Throws<InvalidOperationException>(() => cola.VerPrioridadMinima());
+        }
+
+        [Fact]
+        public void Desencolar_SaleDeMenorAMayorPrioridad()
+        {
+            var cola = new ColaPrioridad<string>();
+            int[] prioridades = { 5, 3, 8, 1, 9, 2 };
+            foreach (int p in prioridades)
+                cola.Encolar($"e{p}", p);
+
+            Assert.Equal(1, cola.VerPrioridadMinima());
+
+            int[] esperado = { 1, 2, 3, 5, 8, 9 };
+            foreach (int p in esperado)
+            {
+                Assert.Equal($"e{p}", cola.Desencolar(out int prioridad));
+                Assert.Equal(p, prioridad);
+            }
+            Assert.True(cola.EstaVacia);
+        }
+
+        [Fact]
+        public void PrioridadesRepetidas_NoSePierdeNinguna()
+        {
+            var cola = new ColaPrioridad<int>();
+            cola.Encolar(10, 4);
+            cola.Encolar(20, 4);
+            cola.Encolar(30, 1);
+            cola.Encolar(40, 4);
+
+            Assert.Equal(30, cola.Desencolar());
+
+            int restantes = 0;
+            while (!cola.EstaVacia)
+            {
+                cola.Desencolar(out int prioridad);
+                Assert.Equal(4, prioridad);
+                restantes++;
+            }
+            Assert.Equal(3, restantes);
+        }
+
+        [Fact]
+        public void Crecer_MantieneElOrden()
+        {
+            var cola = new ColaPrioridad<int>(capacidadInicial: 1);
+            for (int i = 100; i >= 1; i--)
+                cola.Encolar(i, i);
+
+            Assert.Equal(100, cola.Cantidad);
+            for (int i = 1; i <= 100; i++)
+                Assert.Equal(i, cola.Desencolar());
+        }
+
+        [Fact]
+        public void EncolarYDesencolarIntercalado()
+        {
+            var cola = new ColaPrioridad<string>();
+            cola.Encolar("b", 20);
+            cola.Encolar("a", 10);
+            Assert.Equal("a", cola.Desencolar());
+
+            cola.Encolar("c", 5);
+            cola.Encolar("d", 30);
+            Assert.Equal("c", cola.Desencolar());
+            Assert.Equal("b", cola.Desencolar());
+            Assert.Equal("d", cola.Desencolar());
+            Assert.True(cola.EstaVacia);
+        }
+    }
 }
