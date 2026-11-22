@@ -122,6 +122,56 @@ namespace ConviTEC.Tests
             Assert.Equal("V19", grafo.ObtenerNombre(19));
         }
 
+        [Theory]
+        [InlineData("Alajuela (Sede)", "alajuela")]
+        [InlineData("San José (Sede)", "san jose")]
+        [InlineData("  Limón  ", "limon")]
+        [InlineData("SAN   JOSÉ", "san jose")]
+        [InlineData("Paraíso", "paraiso")]
+        [InlineData("Guápiles (sede)", "guapiles")]
+        [InlineData("   ", "")]
+        public void Normalizar_QuitaSedeTildesYMayusculas(string entrada, string esperado)
+        {
+            Assert.Equal(esperado, GrafoMatriz.Normalizar(entrada));
+        }
+
+        [Fact]
+        public void ConYSinSufijoSede_SonElMismoVertice()
+        {
+            var grafo = new GrafoMatriz();
+            grafo.AgregarArista("Alajuela (Sede)", "Heredia", 20);
+            grafo.AgregarArista("Alajuela", "Orotina", 55);
+
+            int a = grafo.ObtenerIndice("Alajuela (Sede)");
+
+            Assert.Equal(3, grafo.CantidadVertices);
+            Assert.Equal(a, grafo.ObtenerIndice("alajuela"));
+            Assert.Equal("Alajuela", grafo.ObtenerNombre(a));
+            Assert.True(grafo.EsSede(a));
+            Assert.False(grafo.EsSede(grafo.ObtenerIndice("Heredia")));
+        }
+
+        [Fact]
+        public void SeMarcaComoSede_AunquePrimeroAparezcaSinSufijo()
+        {
+            var grafo = new GrafoMatriz();
+            grafo.AgregarArista("Cartago", "San José", 45);
+            grafo.AgregarArista("San José (Sede)", "Heredia", 20);
+
+            int sj = grafo.ObtenerIndice("San Jose");
+
+            Assert.True(grafo.EsSede(sj));
+            Assert.Equal("San José", grafo.ObtenerNombre(sj));
+        }
+
+        [Fact]
+        public void Lazo_ConNombresDistintosDelMismoLugar_Lanza()
+        {
+            var grafo = new GrafoMatriz();
+
+            Assert.Throws<ArgumentException>(() => grafo.AgregarArista("Limón (Sede)", "limon", 10));
+        }
+
         [Fact]
         public void IndiceFueraDeRango_Lanza()
         {
