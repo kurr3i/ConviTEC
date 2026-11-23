@@ -1,0 +1,17 @@
+[
+  { "origen": "Liberia (Sede)",  "destino": "Cañas",           "ruta": "R01", "tiempo": 65 },
+  { "origen": "Puntarenas",      "destino": "Orotina",         "ruta": "R02", "tiempo": 45 },
+  { "origen": "Puntarenas",      "destino": "Alajuela (Sede)", "ruta": "R03", "tiempo": 80 },
+  { "origen": "Orotina",         "destino": "Alajuela (Sede)", "ruta": "R04", "tiempo": 55 },
+  { "origen": "Alajuela (Sede)", "destino": "San José (Sede)", "ruta": "R05", "tiempo": 35 },
+  { "origen": "Alajuela (Sede)", "destino": "Heredia",         "ruta": "R06", "tiempo": 20 },
+  { "origen": "San José (Sede)", "destino": "Heredia",         "ruta": "R07", "tiempo": 20 },
+  { "origen": "San José (Sede)", "destino": "Cartago",         "ruta": "R08", "tiempo": 45 },
+  { "origen": "Cartago",         "destino": "Paraíso",         "ruta": "R09", "tiempo": 15 },
+  { "origen": "Paraíso",         "destino": "Turrialba",       "ruta": "R10", "tiempo": 45 },
+  { "origen": "San José (Sede)", "destino": "Guápiles",        "ruta": "R11", "tiempo": 70 },
+  { "origen": "Guápiles",        "destino": "Siquirres",       "ruta": "R12", "tiempo": 55 },
+  { "origen": "Siquirres",       "destino": "Limón (Sede)",    "ruta": "R13", "tiempo": 65 },
+  { "origen": "Turrialba",       "destino": "Limón (Sede)",    "ruta": "R14", "tiempo": 75 },
+  { "origen": "Guápiles",        "destino": "Turrialba",       "ruta": "R15", "tiempo": 80 }
+]
