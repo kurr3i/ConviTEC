@@ -1,6 +1,9 @@
 using System.Text.Json;
+using ConviTEC.Estructuras;
 using ConviTEC.Mensajeria;
 using ConviTEC.Modelo;
+using ConviTEC.Persistencia;
+using ConviTEC.Servicios;
 
 namespace ConviTEC
 {
@@ -41,6 +44,36 @@ namespace ConviTEC
             foreach (var elemento in elementosSedes.EnumerateArray())
                 sedes[indice++] = elemento.GetString()!;
 
+            // Carpeta de datos de la sede
+            string nombreSede = config.RootElement.GetProperty("nombre").GetString()!;
+            string carpetaDatos = Path.Combine(raiz, config.RootElement.GetProperty("carpetaDatos").GetString()!);
+            Directory.CreateDirectory(carpetaDatos);
+
+            // Red de distribución y estado del recorrido
+            DistribucionService distribucion;
+            string rutaRecorrido = Path.Combine(carpetaDatos, "recorrido.json");
+            try
+            {
+                GrafoMatriz grafo = Repositorio.CargarGrafo(Path.Combine(raiz, "data", "grafo.json"));
+                distribucion = new DistribucionService(grafo, nombreSede);
+            }
+            catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is ArgumentException)
+            {
+                Console.Error.WriteLine($"No se pudo cargar la red de distribución: {ex.Message}");
+                return;
+            }
+
+            try
+            {
+                EstadoRecorrido? estado = Repositorio.CargarRecorrido(rutaRecorrido);
+                if (estado != null)
+                    distribucion.RestaurarEstado(estado);
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is ArgumentException)
+            {
+                Console.Error.WriteLine($"[Distribución] {ex.Message} El recorrido empieza desde la sede.");
+            }
+
             // Usuario y clave desde variables de entorno
             string rabbitUsuario = builder.Configuration["RABBIT_USUARIO"] ?? "convitec";
             string rabbitClave = builder.Configuration["RABBIT_CLAVE"] ?? "";
@@ -58,8 +91,6 @@ namespace ConviTEC
             await bus.IniciarAsync();
 
 
-            // cargar el resto de la configuración (carpetaDatos)
-            // crear la carpeta de datos de la sede si no existe
             // recuperar el estado desde los archivos (Repositorio)
 
             var app = builder.Build();
@@ -80,10 +111,55 @@ namespace ConviTEC
 
             // catálogo e inventario  -> /api/catalogo, /api/inventario
             // pedidos                -> /api/pedidos, /api/pedidos/pendientes
-            // entregas               -> /api/entregas/siguiente
             // ventas y estadísticas  -> /api/ventas, /api/estadisticas
 
+            // Distribución
+            app.MapGet("/api/destinos", () => Results.Ok(distribucion.ObtenerDestinos()));
+
+            // TODO: cambiar por pedidoService.ObtenerPendientesParaEntrega y pedidoService.MarcarEntregados
+            MapearEntregas(app, distribucion, rutaRecorrido,
+                obtenerPendientes: () => [],
+                marcarEntregados: (ids, tiempoTraslado) => { });
+
             await app.RunAsync();
+        }
+
+        // DistribucionService no conoce los pedidos: los recibe de afuera y devuelve
+        // cuáles se entregaron, así no queda una dependencia circular con PedidoService
+        private static void MapearEntregas(WebApplication app, DistribucionService distribucion, string rutaRecorrido,
+            Func<EntregaPendiente[]> obtenerPendientes, Action<string[], int> marcarEntregados)
+        {
+            // Evita que dos solicitudes muevan el vehículo al mismo tiempo
+            object bloqueo = new();
+
+            app.MapGet("/api/entregas/siguiente", () =>
+            {
+                PropuestaEntrega? propuesta;
+                lock (bloqueo)
+                    propuesta = distribucion.CalcularSiguiente(obtenerPendientes());
+
+                if (propuesta == null)
+                    return Results.Ok(new { destino = (string?)null, mensaje = "No quedan destinos alcanzables desde la ubicación actual." });
+                return Results.Ok(propuesta);
+            });
+
+            app.MapPost("/api/entregas/siguiente", () =>
+            {
+                ResultadoEntrega? resultado;
+                lock (bloqueo)
+                {
+                    resultado = distribucion.EntregarSiguiente(obtenerPendientes());
+                    if (resultado != null)
+                    {
+                        marcarEntregados(resultado.PedidosEntregados, resultado.TiempoTotal);
+                        Repositorio.GuardarRecorrido(rutaRecorrido, distribucion.ObtenerEstado());
+                    }
+                }
+
+                if (resultado == null)
+                    return Results.Conflict(new { mensaje = "No hay entregas pendientes alcanzables." });
+                return Results.Ok(resultado);
+            });
         }
 
 
