@@ -1,12 +1,13 @@
 using ConviTEC.Algoritmos;
 using ConviTEC.Estructuras;
 using ConviTEC.Persistencia;
+using ConviTEC.Servicios;
 
 namespace ConviTEC.Tests
 {
     public class DijkstraTests
     {
-        private readonly GrafoMatriz _grafo = Repositorio.CargarGrafo(RutaGrafoDelProyecto());
+        private readonly GrafoMatriz _grafo = Repositorio.CargarGrafo(CargaGrafoTests.RutaGrafoDelProyecto());
 
         [Theory]
         [InlineData("Alajuela", "Heredia", 20)]
@@ -154,18 +155,74 @@ namespace ConviTEC.Tests
                 nombres[i] = grafo.ObtenerNombre(camino[i]);
             return nombres;
         }
+    }
 
-        private static string RutaGrafoDelProyecto()
+    public class DistribucionServiceTests
+    {
+        private readonly GrafoMatriz _grafo =
+            Repositorio.CargarGrafo(CargaGrafoTests.RutaGrafoDelProyecto());
+
+        [Fact]
+        public void Constructor_SedeInexistente_Lanza()
         {
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir != null)
-            {
-                string candidato = Path.Combine(dir.FullName, "data", "grafo.json");
-                if (File.Exists(candidato))
-                    return candidato;
-                dir = dir.Parent;
-            }
-            throw new FileNotFoundException("No se encontró data/grafo.json en el repositorio.");
+            Assert.Throws<ArgumentException>(() => new DistribucionService(_grafo, "Nicoya"));
+            Assert.Throws<ArgumentNullException>(() => new DistribucionService(null!, "Alajuela"));
+        }
+
+        [Fact]
+        public void ObtenerDestinos_TodosMenosLaPropiaSede()
+        {
+            var servicio = new DistribucionService(_grafo, "Alajuela");
+
+            string[] destinos = servicio.ObtenerDestinos();
+
+            Assert.Equal(12, destinos.Length);
+            Assert.DoesNotContain("Alajuela", destinos);
+            Assert.Contains("San José", destinos);
+            Assert.Contains("Cañas", destinos);   // se muestra para que el rechazo se pueda probar
+        }
+
+        [Theory]
+        [InlineData("Heredia", "Heredia", 20)]
+        [InlineData("heredia", "Heredia", 20)]
+        [InlineData("San José (Sede)", "San José", 35)]
+        [InlineData("Limon", "Limón", 215)]
+        public void ValidarDestino_Alcanzable(string destino, string nombreLimpio, int tiempo)
+        {
+            var servicio = new DistribucionService(_grafo, "Alajuela");
+
+            ValidacionRuta validacion = servicio.ValidarDestino(destino);
+
+            Assert.True(validacion.Valido);
+            Assert.Equal(nombreLimpio, validacion.Destino);
+            Assert.Equal(tiempo, validacion.TiempoDesdeSede);
+        }
+
+        [Theory]
+        [InlineData("Cañas", "No hay ruta")]
+        [InlineData("Liberia", "No hay ruta")]
+        [InlineData("Nicoya", "no existe")]
+        [InlineData("", "Debe indicar")]
+        [InlineData("Alajuela (Sede)", "propia sede")]
+        public void ValidarDestino_Rechazado(string destino, string fragmentoMotivo)
+        {
+            var servicio = new DistribucionService(_grafo, "Alajuela");
+
+            ValidacionRuta validacion = servicio.ValidarDestino(destino);
+
+            Assert.False(validacion.Valido);
+            Assert.Contains(fragmentoMotivo, validacion.Motivo);
+        }
+
+        [Fact]
+        public void ValidarDestino_DesdeLiberia_SoloLlegaACanas()
+        {
+            var servicio = new DistribucionService(_grafo, "Liberia");
+
+            Assert.True(servicio.ValidarDestino("Cañas").Valido);
+            Assert.Equal(65, servicio.ValidarDestino("Cañas").TiempoDesdeSede);
+            Assert.False(servicio.ValidarDestino("Heredia").Valido);
+            Assert.False(servicio.ValidarDestino("San José").Valido);
         }
     }
 }

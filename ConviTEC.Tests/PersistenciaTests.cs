@@ -120,7 +120,7 @@ namespace ConviTEC.Tests
         }
 
         // Busca data/grafo.json subiendo desde la carpeta bin
-        private static string RutaGrafoDelProyecto()
+        internal static string RutaGrafoDelProyecto()
         {
             var dir = new DirectoryInfo(AppContext.BaseDirectory);
             while (dir != null)
