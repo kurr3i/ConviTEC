@@ -224,5 +224,144 @@ namespace ConviTEC.Tests
             Assert.False(servicio.ValidarDestino("Heredia").Valido);
             Assert.False(servicio.ValidarDestino("San José").Valido);
         }
+
+        [Fact]
+        public void CalcularSiguiente_SinPendientes_DevuelveNull()
+        {
+            var servicio = new DistribucionService(_grafo, "Alajuela");
+
+            Assert.Null(servicio.CalcularSiguiente([]));
+            Assert.Null(servicio.CalcularSiguiente(null!));
+            Assert.Null(servicio.EntregarSiguiente([]));
+            Assert.Equal("Alajuela", servicio.UbicacionActual);
+        }
+
+        [Fact]
+        public void CalcularSiguiente_EligeElMasCercanoYNoMueveElVehiculo()
+        {
+            var servicio = new DistribucionService(_grafo, "San José");
+            EntregaPendiente[] pendientes =
+            {
+                Pendiente("P1", "Limón"), Pendiente("P2", "Heredia"), Pendiente("P3", "Cartago")
+            };
+
+            PropuestaEntrega? propuesta = servicio.CalcularSiguiente(pendientes);
+
+            Assert.NotNull(propuesta);
+            Assert.Equal("Heredia", propuesta.Destino);
+            Assert.Equal(20, propuesta.Tiempo);
+            Assert.Equal(new[] { "San José", "Heredia" }, propuesta.Camino);
+            Assert.Equal(new[] { "P2" }, propuesta.Pedidos);
+            Assert.Equal("San José", servicio.UbicacionActual);
+            Assert.Equal(0, servicio.TiempoAcumulado);
+        }
+
+        [Fact]
+        public void CalcularSiguiente_AgrupaPedidosDelMismoDestino()
+        {
+            var servicio = new DistribucionService(_grafo, "San José");
+            EntregaPendiente[] pendientes =
+            {
+                Pendiente("P1", "Cartago"), Pendiente("P2", "Heredia"), Pendiente("P3", "heredia")
+            };
+
+            Assert.Equal(new[] { "P2", "P3" }, servicio.CalcularSiguiente(pendientes)!.Pedidos);
+        }
+
+        [Fact]
+        public void CalcularSiguiente_IgnoraInalcanzablesEInexistentes()
+        {
+            var servicio = new DistribucionService(_grafo, "Alajuela");
+            EntregaPendiente[] pendientes = { Pendiente("P1", "Cañas"), Pendiente("P2", "Nicoya"), null! };
+
+            Assert.Null(servicio.CalcularSiguiente(pendientes));
+        }
+
+        [Fact]
+        public void CalcularSiguiente_Empate_GanaElPrimeroDeLaLista()
+        {
+            var grafo = new GrafoMatriz();
+            grafo.AgregarArista("Sede (Sede)", "A", 10);
+            grafo.AgregarArista("Sede (Sede)", "B", 10);
+            var servicio = new DistribucionService(grafo, "Sede");
+
+            PropuestaEntrega? propuesta = servicio.CalcularSiguiente(new[] { Pendiente("P1", "B"), Pendiente("P2", "A") });
+
+            Assert.Equal("B", propuesta!.Destino);
+        }
+
+        // Igual que lo hará el endpoint: después de cada entrega se quitan los pedidos entregados
+        [Fact]
+        public void RecorridoCompleto_DesdeAlajuela()
+        {
+            var servicio = new DistribucionService(_grafo, "Alajuela");
+            EntregaPendiente[] pendientes =
+            {
+                Pendiente("P1", "Turrialba"), Pendiente("P2", "Cartago"),
+                Pendiente("P3", "Heredia"), Pendiente("P4", "Heredia")
+            };
+
+            ResultadoEntrega? primera = servicio.EntregarSiguiente(pendientes);
+            Assert.Equal("Heredia", primera!.Destino);
+            Assert.Equal(new[] { "P3", "P4" }, primera.PedidosEntregados);
+            Assert.Equal(20, primera.TiempoTotal);
+            Assert.False(primera.Finalizado);
+            Assert.Equal("Heredia", servicio.UbicacionActual);
+
+            pendientes = Quitar(pendientes, primera.PedidosEntregados);
+            ResultadoEntrega? segunda = servicio.EntregarSiguiente(pendientes);
+            Assert.Equal("Cartago", segunda!.Destino);
+            Assert.Equal(65, segunda.TiempoTramo);
+            Assert.Equal(85, segunda.TiempoTotal);
+            Assert.Equal(new[] { "Heredia", "San José", "Cartago" }, segunda.Camino);
+
+            pendientes = Quitar(pendientes, segunda.PedidosEntregados);
+            ResultadoEntrega? tercera = servicio.EntregarSiguiente(pendientes);
+            Assert.Equal("Turrialba", tercera!.Destino);
+            Assert.Equal(145, tercera.TiempoTotal);
+            Assert.True(tercera.Finalizado);
+
+            // La próxima salida vuelve a partir de la sede
+            Assert.Equal("Alajuela", servicio.UbicacionActual);
+            Assert.Equal(0, servicio.TiempoAcumulado);
+            Assert.Equal(145, servicio.TiempoUltimoRecorrido);
+        }
+
+        [Fact]
+        public void Finaliza_SiLoQueQuedaEsInalcanzable()
+        {
+            var servicio = new DistribucionService(_grafo, "Alajuela");
+            EntregaPendiente[] pendientes = { Pendiente("P1", "Heredia"), Pendiente("P2", "Cañas") };
+
+            ResultadoEntrega? resultado = servicio.EntregarSiguiente(pendientes);
+
+            Assert.Equal("Heredia", resultado!.Destino);
+            Assert.True(resultado.Finalizado);
+        }
+
+        private static EntregaPendiente Pendiente(string id, string destino)
+        {
+            return new EntregaPendiente { IdPedido = id, Destino = destino };
+        }
+
+        private static EntregaPendiente[] Quitar(EntregaPendiente[] pendientes, string[] entregados)
+        {
+            int cantidad = 0;
+            foreach (EntregaPendiente p in pendientes)
+                if (!Contiene(entregados, p.IdPedido)) cantidad++;
+
+            EntregaPendiente[] restantes = new EntregaPendiente[cantidad];
+            int k = 0;
+            foreach (EntregaPendiente p in pendientes)
+                if (!Contiene(entregados, p.IdPedido)) restantes[k++] = p;
+            return restantes;
+        }
+
+        private static bool Contiene(string[] ids, string id)
+        {
+            foreach (string actual in ids)
+                if (actual == id) return true;
+            return false;
+        }
     }
 }
