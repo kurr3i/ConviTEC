@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ConviTEC.Tests/ConviTEC.Tests.csproj" />
+  <Project Path="ConviTEC/ConviTEC.csproj" />
+</Solution>
