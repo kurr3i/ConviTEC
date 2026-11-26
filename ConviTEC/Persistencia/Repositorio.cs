@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ConviTEC.Estructuras;
+using ConviTEC.Servicios;
 
 namespace ConviTEC.Persistencia
 {
@@ -7,8 +8,38 @@ namespace ConviTEC.Persistencia
     {
         private static readonly JsonSerializerOptions OpcionesJson = new()
         {
-            PropertyNameCaseInsensitive = true
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = true
         };
+
+        public static void GuardarRecorrido(string rutaArchivo, EstadoRecorrido estado)
+        {
+            string? carpeta = Path.GetDirectoryName(rutaArchivo);
+            if (!string.IsNullOrEmpty(carpeta))
+                Directory.CreateDirectory(carpeta);
+
+            // Primero a un temporal y después se reemplaza, así un cierre a medias no daña el archivo
+            string temporal = rutaArchivo + ".tmp";
+            File.WriteAllText(temporal, JsonSerializer.Serialize(estado, OpcionesJson));
+            File.Move(temporal, rutaArchivo, overwrite: true);
+        }
+
+        // Null si todavía no hay un recorrido guardado
+        public static EstadoRecorrido? CargarRecorrido(string rutaArchivo)
+        {
+            if (!File.Exists(rutaArchivo))
+                return null;
+
+            try
+            {
+                return JsonSerializer.Deserialize<EstadoRecorrido>(File.ReadAllText(rutaArchivo), OpcionesJson)
+                       ?? throw new InvalidDataException("El archivo del recorrido está vacío.");
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidDataException($"El archivo del recorrido está dañado: {ex.Message}", ex);
+            }
+        }
 
         // Acepta [ {...} ] o { "rutas": [ {...} ] }
         public static GrafoMatriz CargarGrafo(string rutaArchivo)
