@@ -1,5 +1,6 @@
 using ConviTEC.Estructuras;
 using ConviTEC.Persistencia;
+using ConviTEC.Servicios;
 
 namespace ConviTEC.Tests
 {
@@ -131,6 +132,73 @@ namespace ConviTEC.Tests
                 dir = dir.Parent;
             }
             throw new FileNotFoundException("No se encontró data/grafo.json en el repositorio.");
+        }
+    }
+
+    public class RecorridoPersistenciaTests
+    {
+        private readonly GrafoMatriz _grafo =
+            Repositorio.CargarGrafo(CargaGrafoTests.RutaGrafoDelProyecto());
+
+        [Fact]
+        public void GuardarYReiniciar_RecuperaElRecorrido()
+        {
+            string carpeta = Path.Combine(Path.GetTempPath(), $"recorrido-{Guid.NewGuid()}");
+            string archivo = Path.Combine(carpeta, "recorrido.json");
+            try
+            {
+                var antes = new DistribucionService(_grafo, "Alajuela");
+                antes.EntregarSiguiente(new[]
+                {
+                    new EntregaPendiente { IdPedido = "P1", Destino = "Heredia" },
+                    new EntregaPendiente { IdPedido = "P2", Destino = "Cartago" }
+                });
+                Repositorio.GuardarRecorrido(archivo, antes.ObtenerEstado());
+
+                // Simula cerrar la aplicación y volver a abrirla
+                var despues = new DistribucionService(_grafo, "Alajuela");
+                despues.RestaurarEstado(Repositorio.CargarRecorrido(archivo)!);
+
+                Assert.Equal("Heredia", despues.UbicacionActual);
+                Assert.Equal(20, despues.TiempoAcumulado);
+            }
+            finally
+            {
+                if (Directory.Exists(carpeta)) Directory.Delete(carpeta, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void CargarRecorrido_SinArchivo_DevuelveNull()
+        {
+            string archivo = Path.Combine(Path.GetTempPath(), $"no-existe-{Guid.NewGuid()}.json");
+
+            Assert.Null(Repositorio.CargarRecorrido(archivo));
+        }
+
+        [Fact]
+        public void CargarRecorrido_ArchivoDanado_Lanza()
+        {
+            string archivo = Path.Combine(Path.GetTempPath(), $"recorrido-{Guid.NewGuid()}.json");
+            File.WriteAllText(archivo, "{ \"ubicacionActual\": ");
+            try
+            {
+                Assert.Throws<InvalidDataException>(() => Repositorio.CargarRecorrido(archivo));
+            }
+            finally { File.Delete(archivo); }
+        }
+
+        [Theory]
+        [InlineData("Cañas", 0)]       // existe, pero Alajuela no llega
+        [InlineData("Nicoya", 0)]      // no existe
+        [InlineData("Heredia", -5)]    // tiempo inválido
+        public void RestaurarEstado_Invalido_Lanza(string ubicacion, int tiempo)
+        {
+            var servicio = new DistribucionService(_grafo, "Alajuela");
+            var estado = new EstadoRecorrido { UbicacionActual = ubicacion, TiempoAcumulado = tiempo };
+
+            Assert.Throws<ArgumentException>(() => servicio.RestaurarEstado(estado));
+            Assert.Equal("Alajuela", servicio.UbicacionActual);
         }
     }
 }

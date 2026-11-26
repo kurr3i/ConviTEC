@@ -140,6 +140,34 @@ namespace ConviTEC.Servicios
             _tiempoAcumulado = 0;
         }
 
+        public EstadoRecorrido ObtenerEstado()
+        {
+            return new EstadoRecorrido
+            {
+                UbicacionActual = UbicacionActual,
+                TiempoAcumulado = _tiempoAcumulado,
+                TiempoUltimoRecorrido = _tiempoUltimoRecorrido
+            };
+        }
+
+        public void RestaurarEstado(EstadoRecorrido estado)
+        {
+            if (estado == null)
+                throw new ArgumentNullException(nameof(estado));
+
+            int ubicacion = _grafo.ObtenerIndice(estado.UbicacionActual);
+            if (ubicacion == -1 || !Dijkstra.Calcular(_grafo, _sede).EsAlcanzable(ubicacion))
+                throw new ArgumentException(
+                    $"La ubicación guardada '{estado.UbicacionActual}' no es válida para la sede {Sede}.");
+
+            if (estado.TiempoAcumulado < 0 || estado.TiempoUltimoRecorrido < 0)
+                throw new ArgumentException("Los tiempos guardados del recorrido no pueden ser negativos.");
+
+            _ubicacionActual = ubicacion;
+            _tiempoAcumulado = estado.TiempoAcumulado;
+            _tiempoUltimoRecorrido = estado.TiempoUltimoRecorrido;
+        }
+
         private int IndiceDestino(EntregaPendiente pendiente)
         {
             if (pendiente == null)
@@ -180,6 +208,14 @@ namespace ConviTEC.Servicios
                 nombres[i] = _grafo.ObtenerNombre(camino[i]);
             return nombres;
         }
+    }
+
+    // Lo que se guarda en data/<sede>/recorrido.json
+    public class EstadoRecorrido
+    {
+        public string UbicacionActual { get; set; } = "";
+        public int TiempoAcumulado { get; set; }
+        public int TiempoUltimoRecorrido { get; set; }
     }
 
     // Lo mínimo que necesita la distribución de un pedido pendiente
