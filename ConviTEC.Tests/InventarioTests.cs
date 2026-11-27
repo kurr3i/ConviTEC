@@ -180,5 +180,58 @@ namespace ConviTEC.Tests
             Assert.Equal(6, inventario.Consultar("P1")!.Total);
             Assert.Equal(0, inventario.Consultar("P1")!.Reservado);
         }
+                [Fact]
+        public void Descontar_BajaElTotal()
+        {
+            var inventario = Crear();
+            inventario.Descontar("P1", 3);
+
+            Assert.Equal(7, inventario.Consultar("P1")!.Total);
+        }
+
+        [Fact]
+        public void Descontar_RespetaLoReservado_Y_ValidaEntradas()
+        {
+            var inventario = Crear();
+            inventario.Reservar("PED-1", Items("P1", 8));
+
+            Assert.Throws<InvalidOperationException>(() => inventario.Descontar("P1", 3));
+            Assert.Throws<ArgumentException>(() => inventario.Descontar("P1", 0));
+            Assert.Throws<ArgumentException>(() => inventario.Descontar("XX", 1));
+        }
+
+        [Fact]
+        public void ObtenerDisponibles_DescuentaLoReservado()
+        {
+            var inventario = Crear();
+            inventario.Reservar("PED-1", Items("P1", 4));
+
+            ItemCantidad[] disponibles = inventario.ObtenerDisponibles();
+
+            Assert.Equal(2, disponibles.Length);
+            Assert.Equal(6, disponibles[0].Cantidad);
+            Assert.Equal(5, disponibles[1].Cantidad);
+        }
+
+        [Fact]
+        public void Consolidar_UneCodigosRepetidosYDescartaInvalidos()
+        {
+            ItemCantidad[] entrada =
+            [
+                new ItemCantidad { CodigoProducto = "P1", Cantidad = 2 },
+                new ItemCantidad { CodigoProducto = " p1 ", Cantidad = 3 },
+                new ItemCantidad { CodigoProducto = "P2", Cantidad = 0 },
+                new ItemCantidad { CodigoProducto = "", Cantidad = 4 }
+            ];
+
+            ItemCantidad[] resultado = InventarioService.Consolidar(entrada);
+
+            Assert.Single(resultado);
+            Assert.Equal("P1", resultado[0].CodigoProducto);
+            Assert.Equal(5, resultado[0].Cantidad);
+            Assert.Empty(InventarioService.Consolidar(null));
+        }
+
+
     }
 }
