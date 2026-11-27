@@ -38,7 +38,36 @@ namespace ConviTEC.Mensajeria
         public static void Registrar(BusSedes bus, InventarioService inventario, InventarioGlobal global,
                                      string codigoSede, string[] sedes)
         {
-            // MANEJADORES: los siguientes commits agregan uno por uno encima de esta línea
+            // Otra sede pide apartar productos para un pedido suyo
+            bus.Suscribir(TipoMensaje.SolicitudReserva, async mensaje =>
+            {
+                SolicitudReserva? solicitud = mensaje.ObtenerContenido<SolicitudReserva>();
+                if (solicitud == null)
+                {
+                    Console.Error.WriteLine($"[{codigoSede}] SolicitudReserva vacía de {mensaje.Origen}, se descarta.");
+                    return;
+                }
+
+                ItemCantidad[] reservados = inventario.Reservar(solicitud.IdPedido, solicitud.Items);
+
+                var respuesta = new RespuestaReserva
+                {
+                    IdPedido = solicitud.IdPedido,
+                    Aceptada = reservados.Length > 0,
+                    Reservados = reservados,
+                    Motivo = reservados.Length > 0
+                        ? null
+                        : $"La sede {codigoSede} no tiene existencias de los productos solicitados."
+                };
+
+                // La respuesta copia el IdCorrelacion de la solicitud para que quien esperaba la reconozca
+                await bus.EnviarAsync(Mensaje.Crear(TipoMensaje.RespuestaReserva, codigoSede,
+                                                    mensaje.Origen, respuesta, mensaje.IdCorrelacion));
+
+                Console.WriteLine($"[{codigoSede}] Reserva {solicitud.IdPedido} para {mensaje.Origen}: " +
+                                  $"{reservados.Length} producto(s) apartado(s).");
+                await PublicarInventarioAsync(bus, inventario, codigoSede, sedes);
+            });
         }
     }
 }
