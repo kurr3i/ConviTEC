@@ -94,6 +94,15 @@ namespace ConviTEC.Mensajeria
                                   (aplicado ? "aplicado" : "no había reserva activa"));
                 await PublicarInventarioAsync(bus, inventario, codigoSede, sedes);
             });
+
+            // Otra sede avisa cómo quedó su inventario
+            bus.Suscribir(TipoMensaje.SincronizarInventario, mensaje =>
+            {
+                SincronizarInventario? sincronizacion = mensaje.ObtenerContenido<SincronizarInventario>();
+                if (sincronizacion != null)
+                    global.Actualizar(sincronizacion.Sede, sincronizacion.Inventario);
+                return Task.CompletedTask;
+            });
         }
     }
 }
