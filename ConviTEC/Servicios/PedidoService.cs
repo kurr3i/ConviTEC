@@ -132,5 +132,134 @@ namespace ConviTEC.Servicios
                 PedidoEntregado?.Invoke(entregados[i]);
         }
 
+        // Libera lo propio y avisa a las sedes contactadas (Liberar es idempotente: no hace daño de más)
+        private async Task<Pedido> CancelarAsync(Pedido pedido, string motivo, string[] contactadas, int cantidad)
+        {
+            _inventario.Liberar(pedido.Id);
+
+            for (int i = 0; i < cantidad; i++)
+            {
+                try
+                {
+                    await _enviar(Mensaje.Crear(TipoMensaje.LiberarReserva, _codigoSede, contactadas[i],
+                                                new LiberarReserva { IdPedido = pedido.Id }));
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Pedidos] No se pudo enviar LiberarReserva a {contactadas[i]}: {ex.Message}");
+                }
+            }
+
+            pedido.Estado = EstadoPedido.Cancelado;
+            pedido.Motivo = motivo;
+            await NotificarCambioAsync();
+            return pedido;
+        }
+
+        private async Task NotificarCambioAsync()
+        {
+            if (_alCambiarInventario == null)
+                return;
+
+            try
+            {
+                await _alCambiarInventario();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Pedidos] No se pudo sincronizar el inventario: {ex.Message}");
+            }
+        }
+
+        // Lo pedido menos lo ya reservado en la sede propia
+        private static ItemCantidad[] Restar(ItemCantidad[] pedidos, ItemCantidad[] reservados)
+        {
+            ItemCantidad[] resultado = new ItemCantidad[pedidos.Length];
+            int n = 0;
+
+            foreach (ItemCantidad pedido in pedidos)
+            {
+                int falta = pedido.Cantidad - CantidadDe(reservados, pedido.CodigoProducto);
+                if (falta > 0)
+                    resultado[n++] = new ItemCantidad { CodigoProducto = pedido.CodigoProducto, Cantidad = falta };
+            }
+            return Arreglos.Copiar(resultado, n);
+        }
+
+        private static int CantidadDe(ItemCantidad[] items, string codigo)
+        {
+            int total = 0;
+            foreach (ItemCantidad item in items)
+            {
+                if (string.Equals(item.CodigoProducto, codigo, StringComparison.OrdinalIgnoreCase))
+                    total += item.Cantidad;
+            }
+            return total;
+        }
+
+        // True si lo reservado cubre todo lo pedido
+        private static bool Cubre(ItemCantidad[] reservados, ItemCantidad[] pedidos, int cantidadPedidos)
+        {
+            for (int i = 0; i < cantidadPedidos; i++)
+            {
+                if (CantidadDe(reservados, pedidos[i].CodigoProducto) < pedidos[i].Cantidad)
+                    return false;
+            }
+            return true;
+        }
+
+        private static void AgregarAsignacion(ref Asignacion[] asignaciones, ref int cantidad,
+                                              string sede, string codigoProducto, int unidades)
+        {
+            Asignacion? existente = null;
+            for (int i = 0; i < cantidad; i++)
+            {
+                if (asignaciones[i].Sede == sede)
+                {
+                    existente = asignaciones[i];
+                    break;
+                }
+            }
+
+            if (existente == null)
+            {
+                existente = new Asignacion { Sede = sede };
+                Arreglos.Agregar(ref asignaciones, ref cantidad, existente);
+            }
+
+            Arreglos.Agregar(ref existente.Items, ref existente.Cantidad,
+                             new ItemCantidad { CodigoProducto = codigoProducto, Cantidad = unidades });
+        }
+        // Una línea por producto y sede de origen, con el precio del catálogo
+        private DetallePedido[] ConstruirDetalle(ItemCantidad[] locales, Asignacion[] asignaciones, int cantidadAsignaciones)
+        {
+            DetallePedido[] detalle = new DetallePedido[4];
+            int n = 0;
+
+            foreach (ItemCantidad local in locales)
+                Arreglos.Agregar(ref detalle, ref n, NuevaLinea(local.CodigoProducto, local.Cantidad, _codigoSede));
+
+            for (int i = 0; i < cantidadAsignaciones; i++)
+            {
+                Asignacion asignacion = asignaciones[i];
+                for (int j = 0; j < asignacion.Cantidad; j++)
+                    Arreglos.Agregar(ref detalle, ref n,
+                        NuevaLinea(asignacion.Items[j].CodigoProducto, asignacion.Items[j].Cantidad, asignacion.Sede));
+            }
+
+            return Arreglos.Copiar(detalle, n);
+        }
+
+        private DetallePedido NuevaLinea(string codigo, int cantidad, string sedeOrigen)
+        {
+            return new DetallePedido
+            {
+                CodigoProducto = codigo,
+                Cantidad = cantidad,
+                PrecioUnitario = _inventario.ObtenerProducto(codigo)?.Precio ?? 0,
+                SedeOrigen = sedeOrigen
+            };
+        }        
+
     }
 }
