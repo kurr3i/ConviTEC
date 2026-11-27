@@ -59,5 +59,49 @@ namespace ConviTEC.Servicios
             }
             return false;
         }
+                // Unidades disponibles de un producto en esa sede según la última copia (0 si no se sabe)
+        public int Disponible(string sede, string codigoProducto)
+        {
+            lock (_bloqueo)
+            {
+                int pos = BuscarSede(sede);
+                if (pos == -1)
+                    return 0;
+
+                int total = 0;
+                foreach (ItemCantidad linea in _copias[pos])
+                {
+                    if (string.Equals(linea.CodigoProducto, codigoProducto, StringComparison.OrdinalIgnoreCase))
+                        total += linea.Cantidad;
+                }
+                return total;
+            }
+        }
+
+        // La sede (fuera de las excluidas) con más unidades del producto. Null si ninguna tiene.
+        public string? SedeConMas(string codigoProducto, string[] excluidas)
+        {
+            string[] sedes;
+            lock (_bloqueo)
+                sedes = Arreglos.Copiar(_sedes, _cantidad);
+
+            string? mejor = null;
+            int mayor = 0;
+
+            foreach (string sede in sedes)
+            {
+                if (Contiene(excluidas, sede))
+                    continue;
+
+                int disponible = Disponible(sede, codigoProducto);
+                if (disponible > mayor)
+                {
+                    mejor = sede;
+                    mayor = disponible;
+                }
+            }
+            return mejor;
+        }
+
     }
 }
