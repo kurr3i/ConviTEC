@@ -321,5 +321,41 @@ namespace ConviTEC.Servicios
                 return true;
             }
         }
+                // Une las líneas con el mismo código y descarta las de cantidad <= 0
+        public static ItemCantidad[] Consolidar(ItemCantidad[]? items)
+        {
+            if (items == null)
+                return [];
+
+            ItemCantidad[] resultado = new ItemCantidad[items.Length];
+            int n = 0;
+
+            foreach (ItemCantidad item in items)
+            {
+                if (item == null || item.Cantidad <= 0)
+                    continue;
+
+                string codigo = Limpiar(item.CodigoProducto);
+                if (codigo.Length == 0)
+                    continue;
+
+                int pos = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    if (string.Equals(resultado[i].CodigoProducto, codigo, StringComparison.OrdinalIgnoreCase))
+                    {
+                        pos = i;
+                        break;
+                    }
+                }
+
+                if (pos == -1)
+                    resultado[n++] = new ItemCantidad { CodigoProducto = codigo, Cantidad = item.Cantidad };
+                else
+                    resultado[pos].Cantidad += item.Cantidad;
+            }
+
+            return Arreglos.Copiar(resultado, n);
+        }
     }
 }
