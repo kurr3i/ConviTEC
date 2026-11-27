@@ -252,11 +252,13 @@ namespace ConviTEC.Servicios
 
         private DetallePedido NuevaLinea(string codigo, int cantidad, string sedeOrigen)
         {
+            Producto? producto = _inventario.ObtenerProducto(codigo);
             return new DetallePedido
             {
                 CodigoProducto = codigo,
+                Nombre = producto?.Nombre ?? "",
                 Cantidad = cantidad,
-                PrecioUnitario = _inventario.ObtenerProducto(codigo)?.Precio ?? 0,
+                PrecioUnitario = producto?.Precio ?? 0,
                 SedeOrigen = sedeOrigen
             };
         }        

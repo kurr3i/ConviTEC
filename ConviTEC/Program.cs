@@ -137,7 +137,11 @@ namespace ConviTEC
             app.MapInventario(inventario, sincronizarInventario);
             // pedidos                -> /api/pedidos, /api/pedidos/pendientes
             app.MapPedidos(pedidos);
+            // sede y catálogo global -> /api/sede, /api/catalogo-global
+            app.MapSede(codigoSede, nombreSede, sedes, inventario, inventarioGlobal);
             // ventas y estadísticas  -> /api/ventas, /api/estadisticas
+
+            
 
             // Distribución
             app.MapGet("/api/destinos", () => Results.Ok(distribucion.ObtenerDestinos()));

@@ -27,23 +27,25 @@ function tabla(cols, filas, vacio = 'No hay registros todavía.') {
   const tr = filas.map(f => '<tr>' + cols.map(c => `<td class="${c[2] || ''}">${c[1](f)}</td>`).join('') + '</tr>').join('');
   return `<div class="panel"><table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`;
 }
-const detalle = ds => (ds || []).map(d => `${esc(d.nombre || d.codigo)} × ${d.cantidad}`).join('<br>');
+const detalle = ds => (ds || []).map(d => `${esc(d.nombre || d.codigoProducto)} × ${d.cantidad}`).join('<br>');
 const tag = e => `<span class="tag ${esc(e)}">${esc(e)}</span>`;
 const rutaHtml = c => (c || []).length ? '<div class="ruta">' + c.map((p, i) => `<span class="${i === c.length - 1 ? 'fin' : ''}">${esc(p)}</span>`).join('<i>→</i>') + '</div>' : '';
 
+const sedesDe = p => [...new Set((p.detalle || []).map(d => d.sedeOrigen))].join(', ');
 const colsPedido = [
   ['Pedido', p => esc(p.id)], ['Fecha', p => fecha(p.fecha)], ['Estado', p => tag(p.estado)],
-  ['Destino', p => esc(p.destino)], ['Productos', p => detalle(p.detalles)],
-  ['Sedes', p => esc((p.sedes || []).join(', '))], ['Monto', p => crc(p.monto), 'n']
+  ['Destino', p => esc(p.destino)], ['Productos', p => detalle(p.detalle) || `<small>${esc(p.motivo)}</small>`],
+  ['Sedes', p => esc(sedesDe(p))], ['Monto', p => crc(p.monto), 'n']
 ];
 
 const vistas = {
   catalogo: ['Catálogo global', async () => {
     const d = await api('/catalogo-global');
-    const sedes = [...new Set(d.flatMap(p => Object.keys(p.existencias || {})))];
+    const sedes = [...new Set(d.flatMap(p => (p.existencias || []).map(e => e.sede)))];
+    const cant = (p, s) => (p.existencias || []).find(e => e.sede === s)?.cantidad ?? '—';
     return tabla([['Código', p => esc(p.codigo)], ['Producto', p => `<b>${esc(p.nombre)}</b><br><small>${esc(p.descripcion)}</small>`],
       ['Categoría', p => esc(p.categoria)], ['Precio', p => crc(p.precio), 'n'],
-      ...sedes.map(s => [esc(s), p => p.existencias?.[s] ?? 0, 'n'])], d, 'El catálogo global está vacío.');
+      ...sedes.map(s => [esc(s), p => cant(p, s), 'n'])], d, 'El catálogo global está vacío.');
   }],
   inventario: ['Inventario local', async () => {
     const d = await api('/inventario');
@@ -53,7 +55,8 @@ const vistas = {
       <label>Unidades a agregar<input id="invCant" type="number" min="1" value="1"></label>
       <button class="b" id="invAdd">Agregar al inventario</button></div></div>` +
       tabla([['Código', p => esc(p.codigo)], ['Producto', p => esc(p.nombre)], ['Categoría', p => esc(p.categoria)],
-        ['Precio', p => crc(p.precio), 'n'], ['Cantidad', p => p.cantidad, 'n']], d, 'Esta sede no tiene productos en inventario.');
+        ['Precio', p => crc(p.precio), 'n'], ['Total', p => p.total, 'n'], ['Reservado', p => p.reservado, 'n'],
+        ['Disponible', p => p.disponible, 'n']], d, 'Esta sede no tiene productos en inventario.');
   }, () => $('#invAdd').onclick = async () => {
     const cantidad = parseInt($('#invCant').value, 10);
     if (!(cantidad > 0)) return toast('Escriba una cantidad mayor a cero.', true);
@@ -93,7 +96,7 @@ const vistas = {
       if (!V.items.length) return toast('El pedido no tiene productos.', true);
       $('#pEnv').disabled = true;
       try {
-        const r = await api('/pedidos', 'POST', {destino: $('#pDest').value, items: V.items.map(i => ({codigo: i.codigo, cantidad: i.cantidad}))});
+        const r = await api('/pedidos', 'POST', {destino: $('#pDest').value, items: V.items.map(i => ({codigoProducto: i.codigo, cantidad: i.cantidad}))});
         $('#pRes').innerHTML = `<div class="msg ${r.aceptado ? 'ok' : 'mal'}">${r.aceptado ? 'Pedido aceptado. ' : 'Pedido rechazado. '}${esc(r.mensaje)}</div>`;
         if (r.aceptado) { V.items = []; pintar(); }
       } finally { $('#pEnv').disabled = false; }

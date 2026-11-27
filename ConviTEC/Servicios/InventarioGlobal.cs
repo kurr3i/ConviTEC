@@ -39,6 +39,12 @@ namespace ConviTEC.Servicios
                 Arreglos.Agregar(ref _copias, ref _cantidad, copia);
             }
         }
+        // True si ya se recibió el inventario de esa sede
+        public bool Conoce(string sede)
+        {
+            lock (_bloqueo)
+                return BuscarSede(sede) != -1;
+        }
 
         private int BuscarSede(string sede)
         {
