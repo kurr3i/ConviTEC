@@ -187,5 +187,43 @@ namespace ConviTEC.Servicios
                 return copia;
             }
         }
+                // Lo que se comparte con las otras sedes: unidades disponibles por producto
+        public ItemCantidad[] ObtenerDisponibles()
+        {
+            lock (_bloqueo)
+            {
+                ItemCantidad[] disponibles = new ItemCantidad[_cantidadItems];
+                for (int i = 0; i < _cantidadItems; i++)
+                {
+                    disponibles[i] = new ItemCantidad
+                    {
+                        CodigoProducto = _items[i].Codigo,
+                        Cantidad = _items[i].Disponible
+                    };
+                }
+                return disponibles;
+            }
+        }
+
+        // Descuento directo (venta en la propia sede). No toca lo reservado por otros pedidos.
+        public void Descontar(string codigo, int cantidad)
+        {
+            if (cantidad <= 0)
+                throw new ArgumentException($"La cantidad a descontar debe ser mayor que cero (se recibió {cantidad}).");
+
+            lock (_bloqueo)
+            {
+                int pos = BuscarItem(Limpiar(codigo));
+                if (pos == -1)
+                    throw new ArgumentException($"El producto '{codigo}' no existe.");
+
+                ItemInventario item = _items[pos];
+                if (item.Disponible < cantidad)
+                    throw new InvalidOperationException(
+                        $"No hay existencias suficientes de '{item.Codigo}': disponible {item.Disponible}, solicitado {cantidad}.");
+
+                item.Total -= cantidad;
+            }
+        }
     }
 }
