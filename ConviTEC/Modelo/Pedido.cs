@@ -17,6 +17,7 @@ namespace ConviTEC.Modelo
     public class DetallePedido
     {
         public string CodigoProducto { get; set; } = "";
+        public string Nombre { get; set; } = "";
         public int Cantidad { get; set; }
         public decimal PrecioUnitario { get; set; }
         public string SedeOrigen { get; set; } = "";
