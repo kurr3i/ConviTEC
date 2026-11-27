@@ -94,6 +94,59 @@ namespace ConviTEC.Servicios
             for (int i = 0; i < items.Length; i++)
                 copia[i] = new ItemCantidad { CodigoProducto = items[i].CodigoProducto, Cantidad = items[i].Cantidad };
             return copia;
+            
+        }
+                // ---------- Catálogo ----------
+
+        // Registra el producto y le crea su inventario en cero
+        public void RegistrarProducto(Producto producto)
+        {
+            if (producto == null)
+                throw new ArgumentNullException(nameof(producto));
+
+            string codigo = Limpiar(producto.Codigo);
+            if (codigo.Length == 0)
+                throw new ArgumentException("El código del producto no puede estar vacío.");
+            if (producto.Precio < 0)
+                throw new ArgumentException("El precio del producto no puede ser negativo.");
+
+            lock (_bloqueo)
+            {
+                if (BuscarProducto(codigo) != -1)
+                    throw new ArgumentException($"Ya existe un producto con el código '{codigo}'.");
+
+                var copia = new Producto
+                {
+                    Codigo = codigo,
+                    Nombre = producto.Nombre,
+                    Descripcion = producto.Descripcion,
+                    Categoria = producto.Categoria,
+                    Precio = producto.Precio
+                };
+                Arreglos.Agregar(ref _productos, ref _cantidadProductos, copia);
+                Arreglos.Agregar(ref _items, ref _cantidadItems, new ItemInventario { Codigo = codigo });
+            }
+        }
+
+        // Null si no existe
+        public Producto? ObtenerProducto(string codigo)
+        {
+            lock (_bloqueo)
+            {
+                int pos = BuscarProducto(Limpiar(codigo));
+                return pos == -1 ? null : CopiarProducto(_productos[pos]);
+            }
+        }
+
+        public Producto[] ObtenerProductos()
+        {
+            lock (_bloqueo)
+            {
+                Producto[] copia = new Producto[_cantidadProductos];
+                for (int i = 0; i < _cantidadProductos; i++)
+                    copia[i] = CopiarProducto(_productos[i]);
+                return copia;
+            }
         }
     }
 }
