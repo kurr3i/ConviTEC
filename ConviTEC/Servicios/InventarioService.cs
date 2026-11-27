@@ -225,5 +225,51 @@ namespace ConviTEC.Servicios
                 item.Total -= cantidad;
             }
         }
+                // ---------- Reservas por pedido ----------
+
+        // Aparta lo que haya (hasta lo pedido) y devuelve lo que REALMENTE se apartó.
+        // Productos inexistentes o sin existencias simplemente no aparecen en el resultado.
+        // Si el pedido ya tenía una reserva (mensaje duplicado) devuelve la misma, sin apartar de nuevo.
+        public ItemCantidad[] Reservar(string idPedido, ItemCantidad[] solicitados)
+        {
+            string id = Limpiar(idPedido);
+            if (id.Length == 0)
+                throw new ArgumentException("El pedido debe tener un identificador para reservar.");
+
+            lock (_bloqueo)
+            {
+                int existente = BuscarReserva(id);
+                if (existente != -1)
+                    return CopiarItems(_reservas[existente].Items);
+
+                ItemCantidad[] pedidos = solicitados ?? [];
+                ItemCantidad[] reservados = new ItemCantidad[pedidos.Length];
+                int n = 0;
+
+                foreach (ItemCantidad pedido in pedidos)
+                {
+                    if (pedido == null || pedido.Cantidad <= 0)
+                        continue;
+
+                    int pos = BuscarItem(Limpiar(pedido.CodigoProducto));
+                    if (pos == -1)
+                        continue;
+
+                    ItemInventario item = _items[pos];
+                    int cantidad = Math.Min(pedido.Cantidad, item.Disponible);
+                    if (cantidad <= 0)
+                        continue;
+
+                    item.Reservado += cantidad;
+                    reservados[n++] = new ItemCantidad { CodigoProducto = item.Codigo, Cantidad = cantidad };
+                }
+
+                ItemCantidad[] resultado = Arreglos.Copiar(reservados, n);
+                Arreglos.Agregar(ref _reservas, ref _cantidadReservas,
+                    new Reserva { IdPedido = id, Items = resultado, Estado = EstadoReserva.Activa });
+
+                return CopiarItems(resultado);
+            }
+        }
     }
 }
