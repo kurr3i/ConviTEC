@@ -107,6 +107,7 @@ namespace ConviTEC.Tests
             Assert.Equal(1, e.Confirmaciones);
             Assert.Equal(2, pedido.Detalle.Length);
             Assert.Equal("ALA", pedido.Detalle[0].SedeOrigen);
+            Assert.Equal("Mesa", pedido.Detalle[0].Nombre);
             Assert.Equal("SJO", pedido.Detalle[1].SedeOrigen);
             Assert.Equal(500m, pedido.Monto);
         }
