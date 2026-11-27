@@ -94,6 +94,114 @@ namespace ConviTEC.Tests
             Assert.Equal(0, e.Confirmaciones);
             Assert.Equal(300m, pedido.Monto);
         }
-                
+        [Fact]
+        public async Task Exitoso_ComplementaConOtraSede()
+        {
+            var e = new Escenario(stockLocal: 2, stockRemoto: 10);
+
+            Pedido pedido = await e.Pedidos.RegistrarAsync("Cartago", Items(5));
+
+            Assert.Equal(EstadoPedido.Confirmado, pedido.Estado);
+            Assert.Equal(0, e.Local.Consultar("P1")!.Total);
+            Assert.Equal(7, e.Remoto.Consultar("P1")!.Total);
+            Assert.Equal(1, e.Confirmaciones);
+            Assert.Equal(2, pedido.Detalle.Length);
+            Assert.Equal("ALA", pedido.Detalle[0].SedeOrigen);
+            Assert.Equal("SJO", pedido.Detalle[1].SedeOrigen);
+            Assert.Equal(500m, pedido.Monto);
+        }
+
+        [Fact]
+        public async Task SinExistenciasEnLaRed_CancelaYLiberaLoPropio()
+        {
+            var e = new Escenario(stockLocal: 2, stockRemoto: 1);
+
+            Pedido pedido = await e.Pedidos.RegistrarAsync("Cartago", Items(10));
+
+            Assert.Equal(EstadoPedido.Cancelado, pedido.Estado);
+            Assert.Contains("existencias", pedido.Motivo);
+            ItemInventario local = e.Local.Consultar("P1")!;
+            Assert.Equal(2, local.Total);
+            Assert.Equal(0, local.Reservado);
+        }
+
+        [Fact]
+        public async Task SedeNoResponde_CancelaYAvisaParaLiberar()
+        {
+            var e = new Escenario(stockLocal: 2, stockRemoto: 10) { SedeCaida = true };
+
+            Pedido pedido = await e.Pedidos.RegistrarAsync("Cartago", Items(5));
+
+            Assert.Equal(EstadoPedido.Cancelado, pedido.Estado);
+            Assert.Contains("no respondió", pedido.Motivo);
+            Assert.Equal(1, e.Liberaciones);
+            Assert.Equal(2, e.Local.Consultar("P1")!.Total);
+            Assert.Equal(0, e.Local.Consultar("P1")!.Reservado);
+        }
+
+        [Fact]
+        public async Task CopiaGlobalDesactualizada_LaSedeResponderParcial_CancelaTodo()
+        {
+            // ALA cree que SJO tiene 10, pero solo le quedan 1
+            var e = new Escenario(stockLocal: 2, stockRemoto: 1, stockGlobal: 10);
+
+            Pedido pedido = await e.Pedidos.RegistrarAsync("Cartago", Items(5));
+
+            Assert.Equal(EstadoPedido.Cancelado, pedido.Estado);
+            Assert.Equal(1, e.Liberaciones);
+            Assert.Equal(1, e.Remoto.Consultar("P1")!.Total);
+            Assert.Equal(0, e.Remoto.Consultar("P1")!.Reservado);
+            Assert.Equal(0, e.Local.Consultar("P1")!.Reservado);
+        }
+
+        [Fact]
+        public async Task DestinoInalcanzable_SeRechazaSinReservar()
+        {
+            var e = new Escenario(stockLocal: 10, stockRemoto: 10);
+
+            Pedido pedido = await e.Pedidos.RegistrarAsync("Cañas", Items(1));
+
+            Assert.Equal(EstadoPedido.Rechazado, pedido.Estado);
+            Assert.Contains("No hay ruta", pedido.Motivo);
+            Assert.Equal(0, e.Local.Consultar("P1")!.Reservado);
+        }
+
+        [Fact]
+        public async Task ProductoInexistenteOPedidoVacio_SeRechaza()
+        {
+            var e = new Escenario(stockLocal: 10, stockRemoto: 10);
+
+            Pedido inexistente = await e.Pedidos.RegistrarAsync("Cartago",
+                [new ItemCantidad { CodigoProducto = "XX", Cantidad = 1 }]);
+            Pedido vacio = await e.Pedidos.RegistrarAsync("Cartago", []);
+
+            Assert.Equal(EstadoPedido.Rechazado, inexistente.Estado);
+            Assert.Equal(EstadoPedido.Rechazado, vacio.Estado);
+        }
+
+        [Fact]
+        public async Task PendientesYEntrega_PasanPorLosEstadosEsperados()
+        {
+            var e = new Escenario(stockLocal: 10, stockRemoto: 10);
+            Pedido entregado = null!;
+            e.Pedidos.PedidoEntregado += p => entregado = p;
+
+            Pedido pedido = await e.Pedidos.RegistrarAsync("Cartago", Items(1));
+            await e.Pedidos.RegistrarAsync("Cañas", Items(1));   // rechazado: no debe quedar pendiente
+
+            EntregaPendiente[] pendientes = e.Pedidos.ObtenerPendientesParaEntrega();
+            Assert.Single(pendientes);
+            Assert.Equal(pedido.Id, pendientes[0].IdPedido);
+            Assert.Equal("Cartago", pendientes[0].Destino);
+
+            e.Pedidos.MarcarEntregados([pedido.Id], 55);
+
+            Assert.Equal(EstadoPedido.Entregado, pedido.Estado);
+            Assert.Equal(55, pedido.TiempoTraslado);
+            Assert.NotNull(pedido.FechaEntrega);
+            Assert.Same(pedido, entregado);
+            Assert.Empty(e.Pedidos.ObtenerPendientesParaEntrega());
+            Assert.Equal(2, e.Pedidos.ObtenerPedidos().Length);
+        }                
     }
 }
