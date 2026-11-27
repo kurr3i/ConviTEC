@@ -68,6 +68,32 @@ namespace ConviTEC.Mensajeria
                                   $"{reservados.Length} producto(s) apartado(s).");
                 await PublicarInventarioAsync(bus, inventario, codigoSede, sedes);
             });
+
+            // El pedido se completó: ahora sí se descuentan las unidades apartadas
+            bus.Suscribir(TipoMensaje.ConfirmarReserva, async mensaje =>
+            {
+                ConfirmarReserva? confirmacion = mensaje.ObtenerContenido<ConfirmarReserva>();
+                if (confirmacion == null)
+                    return;
+
+                bool aplicado = inventario.Confirmar(confirmacion.IdPedido);
+                Console.WriteLine($"[{codigoSede}] Confirmar {confirmacion.IdPedido}: " +
+                                  (aplicado ? "aplicado" : "no había reserva activa"));
+                await PublicarInventarioAsync(bus, inventario, codigoSede, sedes);
+            });
+
+            // El pedido se canceló: lo apartado vuelve a estar disponible
+            bus.Suscribir(TipoMensaje.LiberarReserva, async mensaje =>
+            {
+                LiberarReserva? liberacion = mensaje.ObtenerContenido<LiberarReserva>();
+                if (liberacion == null)
+                    return;
+
+                bool aplicado = inventario.Liberar(liberacion.IdPedido);
+                Console.WriteLine($"[{codigoSede}] Liberar {liberacion.IdPedido}: " +
+                                  (aplicado ? "aplicado" : "no había reserva activa"));
+                await PublicarInventarioAsync(bus, inventario, codigoSede, sedes);
+            });
         }
     }
 }
