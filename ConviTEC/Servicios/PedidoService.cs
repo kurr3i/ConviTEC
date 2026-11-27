@@ -261,5 +261,127 @@ namespace ConviTEC.Servicios
             };
         }        
 
+        public async Task<Pedido> RegistrarAsync(string destino, ItemCantidad[] solicitados)
+        {
+            var pedido = new Pedido
+            {
+                Id = $"{_codigoSede}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}",
+                Fecha = DateTime.UtcNow,
+                Estado = EstadoPedido.Pendiente
+            };
+            GuardarPedido(pedido);
+
+            // 1. Validaciones que no necesitan comunicarse con nadie
+            ItemCantidad[] items = InventarioService.Consolidar(solicitados);
+            if (items.Length == 0)
+                return Rechazar(pedido, "El pedido debe incluir al menos un producto con cantidad mayor que cero.");
+
+            foreach (ItemCantidad item in items)
+            {
+                if (_inventario.ObtenerProducto(item.CodigoProducto) == null)
+                    return Rechazar(pedido, $"El producto '{item.CodigoProducto}' no existe en el catálogo.");
+            }
+
+            ValidacionRuta ruta = _distribucion.ValidarDestino(destino);
+            if (!ruta.Valido)
+                return Rechazar(pedido, ruta.Motivo);
+            pedido.Destino = ruta.Destino;
+
+            // 2. Primero lo propio
+            ItemCantidad[] locales = _inventario.Reservar(pedido.Id, items);
+            ItemCantidad[] faltantes = Restar(items, locales);
+
+            // 3. Repartir lo que falta entre las otras sedes, siempre empezando por la que más tiene
+            Asignacion[] asignaciones = new Asignacion[4];
+            int cantidadAsignaciones = 0;
+
+            foreach (ItemCantidad faltante in faltantes)
+            {
+                int restante = faltante.Cantidad;
+                string[] excluidas = new string[4];
+                int cantidadExcluidas = 0;
+                Arreglos.Agregar(ref excluidas, ref cantidadExcluidas, _codigoSede);
+
+                while (restante > 0)
+                {
+                    string? sede = _global.SedeConMas(faltante.CodigoProducto,
+                                                      Arreglos.Copiar(excluidas, cantidadExcluidas));
+                    if (sede == null)
+                        return await CancelarAsync(pedido,
+                            $"No hay existencias suficientes de '{faltante.CodigoProducto}' en la red de sedes.", [], 0);
+
+                    int toma = Math.Min(_global.Disponible(sede, faltante.CodigoProducto), restante);
+                    AgregarAsignacion(ref asignaciones, ref cantidadAsignaciones, sede, faltante.CodigoProducto, toma);
+                    restante -= toma;
+                    Arreglos.Agregar(ref excluidas, ref cantidadExcluidas, sede);
+                }
+            }
+
+            // 4. Pedir a cada sede. Cualquier fallo cancela todo; a las sedes contactadas se les avisa
+            // aunque no hayan respondido, porque podrían haber reservado cuando ya no esperábamos.
+            string[] contactadas = new string[4];
+            int cantidadContactadas = 0;
+
+            for (int i = 0; i < cantidadAsignaciones; i++)
+            {
+                Asignacion asignacion = asignaciones[i];
+                Arreglos.Agregar(ref contactadas, ref cantidadContactadas, asignacion.Sede);
+
+                Mensaje solicitud = Mensaje.Crear(TipoMensaje.SolicitudReserva, _codigoSede, asignacion.Sede,
+                    new SolicitudReserva
+                    {
+                        IdPedido = pedido.Id,
+                        Items = Arreglos.Copiar(asignacion.Items, asignacion.Cantidad)
+                    });
+
+                RespuestaReserva? respuesta;
+                try
+                {
+                    Mensaje recibido = await _solicitar(solicitud);
+                    respuesta = recibido.ObtenerContenido<RespuestaReserva>();
+                }
+                catch (TimeoutException ex)
+                {
+                    return await CancelarAsync(pedido, ex.Message, contactadas, cantidadContactadas);
+                }
+                catch (Exception ex)
+                {
+                    return await CancelarAsync(pedido,
+                        $"Error de comunicación con la sede {asignacion.Sede}: {ex.Message}",
+                        contactadas, cantidadContactadas);
+                }
+
+                if (respuesta == null || !Cubre(respuesta.Reservados ?? [], asignacion.Items, asignacion.Cantidad))
+                {
+                    string detalle = string.IsNullOrWhiteSpace(respuesta?.Motivo)
+                        ? "no pudo reservar todo lo solicitado"
+                        : respuesta.Motivo;
+                    return await CancelarAsync(pedido, $"La sede {asignacion.Sede}: {detalle}",
+                                               contactadas, cantidadContactadas);
+                }
+            }
+
+            // 5. Todo reservado: confirmar en todas partes
+            pedido.Estado = EstadoPedido.Reservado;
+            pedido.Detalle = ConstruirDetalle(locales, asignaciones, cantidadAsignaciones);
+
+            for (int i = 0; i < cantidadContactadas; i++)
+            {
+                try
+                {
+                    await _enviar(Mensaje.Crear(TipoMensaje.ConfirmarReserva, _codigoSede, contactadas[i],
+                                                new ConfirmarReserva { IdPedido = pedido.Id }));
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Pedidos] No se pudo enviar ConfirmarReserva a {contactadas[i]}: {ex.Message}");
+                }
+            }
+
+            _inventario.Confirmar(pedido.Id);
+            pedido.Estado = EstadoPedido.Confirmado;
+            await NotificarCambioAsync();
+            return pedido;
+        }
     }
 }
