@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ConviTEC.Estructuras;
+using ConviTEC.Api;
 using ConviTEC.Mensajeria;
 using ConviTEC.Modelo;
 using ConviTEC.Persistencia;
@@ -81,6 +82,20 @@ namespace ConviTEC
             // Inicializar el bus de mensajes (RabbitMQ)
             await using var bus = new BusSedes(codigoSede, sedes, rabbitHost, rabbitUsuario, rabbitClave);
             
+            
+            // Inventario de la sede y copia del inventario de las demás
+            var inventario = new InventarioService();
+            DatosDemo.Cargar(inventario, codigoSede);   // TODO: reemplazar por la carga desde archivos (Repositorio)
+            var inventarioGlobal = new InventarioGlobal();
+
+            // Avisa a las otras sedes cómo quedó el inventario de esta
+            Func<Task> sincronizarInventario =
+                () => ManejadoresInventario.PublicarInventarioAsync(bus, inventario, codigoSede, sedes);
+
+            // Reservar, confirmar, liberar y sincronizar: se registran ANTES de IniciarAsync
+            ManejadoresInventario.Registrar(bus, inventario, inventarioGlobal, codigoSede, sedes);
+
+
             // Suscribir un manejador para el tipo de mensaje Ping (solo para pruebas)
             bus.Suscribir(TipoMensaje.Ping, mensaje =>
             {
@@ -89,9 +104,18 @@ namespace ConviTEC
             });
             
             await bus.IniciarAsync();
+            // Presentarse: las otras sedes guardan este inventario (y las que arranquen después
+            // recibirán el suyo cuando esta sede ya esté escuchando)
+            await sincronizarInventario();
 
 
-            // recuperar el estado desde los archivos (Repositorio)
+            // Pedidos: las solicitudes esperan la respuesta hasta 10 segundos
+            var pedidos = new PedidoService(inventario, distribucion, inventarioGlobal, codigoSede,
+                solicitar: mensaje => bus.SolicitarAsync(mensaje, TimeSpan.FromSeconds(10)),
+                enviar: bus.EnviarAsync,
+                alCambiarInventario: sincronizarInventario);
+
+            // TODO: recuperar el estado desde los archivos (Repositorio)
 
             var app = builder.Build();
 
@@ -109,17 +133,22 @@ namespace ConviTEC
                 return Results.Ok(new { enviado = true, destino });
             });
 
-            // catálogo e inventario  -> /api/catalogo, /api/inventario
+            // catálogo e inventario  -> /api/catalogo, /api/inventario, /api/inventario/agregar
+            app.MapInventario(inventario, sincronizarInventario);
             // pedidos                -> /api/pedidos, /api/pedidos/pendientes
+            app.MapPedidos(pedidos);
+            // sede y catálogo global -> /api/sede, /api/catalogo-global
+            app.MapSede(codigoSede, nombreSede, sedes, inventario, inventarioGlobal);
             // ventas y estadísticas  -> /api/ventas, /api/estadisticas
+
+            
 
             // Distribución
             app.MapGet("/api/destinos", () => Results.Ok(distribucion.ObtenerDestinos()));
 
-            // TODO: cambiar por pedidoService.ObtenerPendientesParaEntrega y pedidoService.MarcarEntregados
             MapearEntregas(app, distribucion, rutaRecorrido,
-                obtenerPendientes: () => [],
-                marcarEntregados: (ids, tiempoTraslado) => { });
+                obtenerPendientes: pedidos.ObtenerPendientesParaEntrega,
+                marcarEntregados: pedidos.MarcarEntregados);
 
             await app.RunAsync();
         }
