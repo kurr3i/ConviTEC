@@ -271,5 +271,55 @@ namespace ConviTEC.Servicios
                 return CopiarItems(resultado);
             }
         }
+                // Descuenta de verdad lo reservado. True si quedó confirmada (también si ya lo estaba).
+        // False si no hay reserva o ya fue liberada.
+        public bool Confirmar(string idPedido)
+        {
+            lock (_bloqueo)
+            {
+                int pos = BuscarReserva(Limpiar(idPedido));
+                if (pos == -1)
+                    return false;
+
+                Reserva reserva = _reservas[pos];
+                if (reserva.Estado == EstadoReserva.Confirmada)
+                    return true;
+                if (reserva.Estado == EstadoReserva.Liberada)
+                    return false;
+
+                foreach (ItemCantidad linea in reserva.Items)
+                {
+                    ItemInventario item = _items[BuscarItem(linea.CodigoProducto)];
+                    item.Reservado -= linea.Cantidad;
+                    item.Total -= linea.Cantidad;
+                }
+                reserva.Estado = EstadoReserva.Confirmada;
+                return true;
+            }
+        }
+
+        // Devuelve lo reservado al disponible. True si quedó liberada (también si ya lo estaba).
+        // False si no hay reserva o ya fue confirmada (lo confirmado no se puede liberar).
+        public bool Liberar(string idPedido)
+        {
+            lock (_bloqueo)
+            {
+                int pos = BuscarReserva(Limpiar(idPedido));
+                if (pos == -1)
+                    return false;
+
+                Reserva reserva = _reservas[pos];
+                if (reserva.Estado == EstadoReserva.Liberada)
+                    return true;
+                if (reserva.Estado == EstadoReserva.Confirmada)
+                    return false;
+
+                foreach (ItemCantidad linea in reserva.Items)
+                    _items[BuscarItem(linea.CodigoProducto)].Reservado -= linea.Cantidad;
+
+                reserva.Estado = EstadoReserva.Liberada;
+                return true;
+            }
+        }
     }
 }
