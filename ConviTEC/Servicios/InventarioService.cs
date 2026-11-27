@@ -148,5 +148,44 @@ namespace ConviTEC.Servicios
                 return copia;
             }
         }
+                // ---------- Existencias ----------
+
+        // Incorpora unidades al inventario de un producto registrado
+        public ItemInventario Agregar(string codigo, int cantidad)
+        {
+            if (cantidad <= 0)
+                throw new ArgumentException($"La cantidad a agregar debe ser mayor que cero (se recibió {cantidad}).");
+
+            lock (_bloqueo)
+            {
+                int pos = BuscarItem(Limpiar(codigo));
+                if (pos == -1)
+                    throw new ArgumentException($"El producto '{codigo}' no está registrado en el catálogo.");
+
+                _items[pos].Total += cantidad;
+                return CopiarItem(_items[pos]);
+            }
+        }
+
+        // Null si el producto no existe
+        public ItemInventario? Consultar(string codigo)
+        {
+            lock (_bloqueo)
+            {
+                int pos = BuscarItem(Limpiar(codigo));
+                return pos == -1 ? null : CopiarItem(_items[pos]);
+            }
+        }
+
+        public ItemInventario[] ObtenerTodos()
+        {
+            lock (_bloqueo)
+            {
+                ItemInventario[] copia = new ItemInventario[_cantidadItems];
+                for (int i = 0; i < _cantidadItems; i++)
+                    copia[i] = CopiarItem(_items[i]);
+                return copia;
+            }
+        }
     }
 }
