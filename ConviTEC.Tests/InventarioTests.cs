@@ -108,5 +108,77 @@ namespace ConviTEC.Tests
         {
             Assert.Throws<ArgumentException>(() => Crear().Reservar("", Items("P1", 1)));
         }
+                [Fact]
+        public void Confirmar_DescuentaElTotalYLimpiaLoReservado()
+        {
+            var inventario = Crear();
+            inventario.Reservar("PED-1", Items("P1", 4));
+
+            Assert.True(inventario.Confirmar("PED-1"));
+
+            ItemInventario item = inventario.Consultar("P1")!;
+            Assert.Equal(6, item.Total);
+            Assert.Equal(0, item.Reservado);
+        }
+
+        [Fact]
+        public void Confirmar_DosVeces_NoDescuentaDeNuevo()
+        {
+            var inventario = Crear();
+            inventario.Reservar("PED-1", Items("P1", 4));
+
+            inventario.Confirmar("PED-1");
+            Assert.True(inventario.Confirmar("PED-1"));
+
+            Assert.Equal(6, inventario.Consultar("P1")!.Total);
+        }
+
+        [Fact]
+        public void Confirmar_SinReserva_DevuelveFalse()
+        {
+            Assert.False(Crear().Confirmar("NO-EXISTE"));
+        }
+
+        [Fact]
+        public void Liberar_DevuelveLoReservadoYNoTocaElTotal()
+        {
+            var inventario = Crear();
+            inventario.Reservar("PED-1", Items("P1", 4));
+
+            Assert.True(inventario.Liberar("PED-1"));
+
+            ItemInventario item = inventario.Consultar("P1")!;
+            Assert.Equal(10, item.Total);
+            Assert.Equal(0, item.Reservado);
+        }
+
+        [Fact]
+        public void Liberar_DosVeces_NoDevuelveDeMas()
+        {
+            var inventario = Crear();
+            inventario.Reservar("PED-1", Items("P1", 4));
+            inventario.Reservar("PED-2", Items("P1", 2));
+
+            inventario.Liberar("PED-1");
+            Assert.True(inventario.Liberar("PED-1"));
+
+            Assert.Equal(2, inventario.Consultar("P1")!.Reservado);
+        }
+
+        [Fact]
+        public void LiberarUnPedidoConfirmado_YConfirmarUnoLiberado_DevuelvenFalse()
+        {
+            var inventario = Crear();
+            inventario.Reservar("PED-1", Items("P1", 4));
+            inventario.Reservar("PED-2", Items("P1", 2));
+
+            inventario.Confirmar("PED-1");
+            inventario.Liberar("PED-2");
+
+            Assert.False(inventario.Liberar("PED-1"));
+            Assert.False(inventario.Confirmar("PED-2"));
+            Assert.Equal(6, inventario.Consultar("P1")!.Total);
+            Assert.Equal(0, inventario.Consultar("P1")!.Reservado);
+        }
     }
 }
