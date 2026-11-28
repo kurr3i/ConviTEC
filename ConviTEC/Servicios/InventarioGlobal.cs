@@ -9,9 +9,8 @@ namespace ConviTEC.Servicios
     // (por eso se le manda una SolicitudReserva y se revisa lo que responde).
     public class InventarioGlobal
     {
-        private string[] _sedes = new string[8];
-        private ItemCantidad[][] _copias = new ItemCantidad[8][];
-        private int _cantidad;
+        // Clave: el código de la sede; valor: sus unidades disponibles por producto
+        private readonly ArbolAVL<string, ItemCantidad[]> _copias = new();
         private readonly object _bloqueo = new();
 
         public void Actualizar(string sede, ItemCantidad[]? disponibles)
@@ -26,34 +25,16 @@ namespace ConviTEC.Servicios
 
             lock (_bloqueo)
             {
-                int pos = BuscarSede(sede);
-                if (pos != -1)
-                {
-                    _copias[pos] = copia;
-                    return;
-                }
-
-                // Las dos listas crecen juntas, por eso se usa un contador auxiliar
-                int cantidadSedes = _cantidad;
-                Arreglos.Agregar(ref _sedes, ref cantidadSedes, sede);
-                Arreglos.Agregar(ref _copias, ref _cantidad, copia);
+                if (!_copias.Actualizar(sede, copia))
+                    _copias.Insertar(sede, copia);
             }
         }
+
         // True si ya se recibió el inventario de esa sede
         public bool Conoce(string sede)
         {
             lock (_bloqueo)
-                return BuscarSede(sede) != -1;
-        }
-
-        private int BuscarSede(string sede)
-        {
-            for (int i = 0; i < _cantidad; i++)
-            {
-                if (_sedes[i] == sede)
-                    return i;
-            }
-            return -1;
+                return _copias.Contiene(sede);
         }
 
         private static bool Contiene(string[] sedes, string sede)
@@ -70,12 +51,11 @@ namespace ConviTEC.Servicios
         {
             lock (_bloqueo)
             {
-                int pos = BuscarSede(sede);
-                if (pos == -1)
+                if (!_copias.IntentarObtener(sede, out ItemCantidad[] lineas))
                     return 0;
 
                 int total = 0;
-                foreach (ItemCantidad linea in _copias[pos])
+                foreach (ItemCantidad linea in lineas)
                 {
                     if (string.Equals(linea.CodigoProducto, codigoProducto, StringComparison.OrdinalIgnoreCase))
                         total += linea.Cantidad;
@@ -89,7 +69,7 @@ namespace ConviTEC.Servicios
         {
             string[] sedes;
             lock (_bloqueo)
-                sedes = Arreglos.Copiar(_sedes, _cantidad);
+                sedes = _copias.ClavesEnOrden();
 
             string? mejor = null;
             int mayor = 0;

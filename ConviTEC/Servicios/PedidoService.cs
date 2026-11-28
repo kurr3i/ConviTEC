@@ -32,8 +32,8 @@ namespace ConviTEC.Servicios
         private readonly Func<Mensaje, Task> _enviar;
         private readonly Func<Task>? _alCambiarInventario;
 
-        private Pedido[] _pedidos = new Pedido[16];
-        private int _cantidadPedidos;
+        // Historial en orden de registro
+        private readonly ListaDinamica<Pedido> _pedidos = new();
         private readonly object _bloqueo = new();
 
         // Lo escucha quien genera las ventas
@@ -61,7 +61,7 @@ namespace ConviTEC.Servicios
         private void GuardarPedido(Pedido pedido)
         {
             lock (_bloqueo)
-                Arreglos.Agregar(ref _pedidos, ref _cantidadPedidos, pedido);
+                _pedidos.Agregar(pedido);
         }
 
         private static Pedido Rechazar(Pedido pedido, string motivo)
@@ -74,30 +74,27 @@ namespace ConviTEC.Servicios
         public Pedido[] ObtenerPedidos()
         {
             lock (_bloqueo)
-                return Arreglos.Copiar(_pedidos, _cantidadPedidos);
+                return _pedidos.ComoArreglo();
         }
 
         public Pedido? ObtenerPedido(string id)
         {
-            foreach (Pedido pedido in ObtenerPedidos())
+            lock (_bloqueo)
             {
-                if (pedido.Id == id)
-                    return pedido;
+                int pos = _pedidos.BuscarIndice(p => p.Id == id);
+                return pos == -1 ? null : _pedidos.Obtener(pos);
             }
-            return null;
         }
 
         public Pedido[] ObtenerPorEstado(EstadoPedido estado)
         {
-            Pedido[] todos = ObtenerPedidos();
-            Pedido[] filtrados = new Pedido[todos.Length];
-            int n = 0;
-            foreach (Pedido pedido in todos)
+            ListaDinamica<Pedido> filtrados = new();
+            foreach (Pedido pedido in ObtenerPedidos())
             {
                 if (pedido.Estado == estado)
-                    filtrados[n++] = pedido;
+                    filtrados.Agregar(pedido);
             }
-            return Arreglos.Copiar(filtrados, n);
+            return filtrados.ComoArreglo();
         }
 
         // Para DistribucionService: pedidos confirmados, el más viejo primero
@@ -174,18 +171,17 @@ namespace ConviTEC.Servicios
         // Lo pedido menos lo ya reservado en la sede propia
         private static ItemCantidad[] Restar(ItemCantidad[] pedidos, ItemCantidad[] reservados)
         {
-            ItemCantidad[] resultado = new ItemCantidad[pedidos.Length];
-            int n = 0;
+            ListaDinamica<ItemCantidad> resultado = new();
 
             foreach (ItemCantidad pedido in pedidos)
             {
                 int falta = pedido.Cantidad - CantidadDe(reservados, pedido.CodigoProducto);
                 if (falta > 0)
-                    resultado[n++] = new ItemCantidad { CodigoProducto = pedido.CodigoProducto, Cantidad = falta };
+                    resultado.Agregar(new ItemCantidad { CodigoProducto = pedido.CodigoProducto, Cantidad = falta });
             }
-            return Arreglos.Copiar(resultado, n);
+            return resultado.ComoArreglo();
         }
-
+        
         private static int CantidadDe(ItemCantidad[] items, string codigo)
         {
             int total = 0;

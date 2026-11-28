@@ -9,8 +9,8 @@ namespace ConviTEC.Servicios
     // Reservar NO descuenta: aparta unidades (sube Reservado). Solo Confirmar descuenta de verdad.
     // Confirmar y Liberar son idempotentes: un mensaje duplicado no cambia nada.
     //
-    // Por dentro usa arreglos nativos con búsqueda lineal. Cuando existan TablaHash y ArbolAVL,
-    // solo hay que cambiar los métodos privados Buscar* y los campos.
+    // Por dentro guarda catálogo, existencias y reservas en árboles AVL (búsqueda en O(log n)).
+    // Cuando exista la TablaHash, las reservas por pedido se pueden pasar a ella.
     public class InventarioService
     {
         private enum EstadoReserva { Activa, Confirmada, Liberada }
@@ -25,9 +25,8 @@ namespace ConviTEC.Servicios
         // Clave: el código en mayúsculas, así la búsqueda no distingue mayúsculas de minúsculas
         private readonly ArbolAVL<string, Producto> _productos = new();
         private readonly ArbolAVL<string, ItemInventario> _items = new();
-        private Reserva[] _reservas = new Reserva[8];
-        private int _cantidadReservas;
-
+        // Clave: el id del pedido
+        private readonly ArbolAVL<string, Reserva> _reservas = new();
         // Los manejadores de mensajes y la API usan el servicio al mismo tiempo
         private readonly object _bloqueo = new();
 
@@ -39,15 +38,6 @@ namespace ConviTEC.Servicios
             return Limpiar(codigo).ToUpperInvariant();
         }
 
-        private int BuscarReserva(string idPedido)
-        {
-            for (int i = 0; i < _cantidadReservas; i++)
-            {
-                if (_reservas[i].IdPedido == idPedido)
-                    return i;
-            }
-            return -1;
-        }
 
         // ---------- Auxiliares ----------
 
@@ -226,13 +216,11 @@ namespace ConviTEC.Servicios
 
             lock (_bloqueo)
             {
-                int existente = BuscarReserva(id);
-                if (existente != -1)
-                    return CopiarItems(_reservas[existente].Items);
+                if (_reservas.IntentarObtener(id, out Reserva existente))
+                    return CopiarItems(existente.Items);
 
                 ItemCantidad[] pedidos = solicitados ?? [];
-                ItemCantidad[] reservados = new ItemCantidad[pedidos.Length];
-                int n = 0;
+                ListaDinamica<ItemCantidad> reservados = new();
 
                 foreach (ItemCantidad pedido in pedidos)
                 {
@@ -247,12 +235,11 @@ namespace ConviTEC.Servicios
                         continue;
 
                     item.Reservado += cantidad;
-                    reservados[n++] = new ItemCantidad { CodigoProducto = item.Codigo, Cantidad = cantidad };
+                    reservados.Agregar(new ItemCantidad { CodigoProducto = item.Codigo, Cantidad = cantidad });
                 }
 
-                ItemCantidad[] resultado = Arreglos.Copiar(reservados, n);
-                Arreglos.Agregar(ref _reservas, ref _cantidadReservas,
-                    new Reserva { IdPedido = id, Items = resultado, Estado = EstadoReserva.Activa });
+                ItemCantidad[] resultado = reservados.ComoArreglo();
+                _reservas.Insertar(id, new Reserva { IdPedido = id, Items = resultado, Estado = EstadoReserva.Activa });
 
                 return CopiarItems(resultado);
             }
@@ -263,11 +250,9 @@ namespace ConviTEC.Servicios
         {
             lock (_bloqueo)
             {
-                int pos = BuscarReserva(Limpiar(idPedido));
-                if (pos == -1)
+                if (!_reservas.IntentarObtener(Limpiar(idPedido), out Reserva reserva))
                     return false;
 
-                Reserva reserva = _reservas[pos];
                 if (reserva.Estado == EstadoReserva.Confirmada)
                     return true;
                 if (reserva.Estado == EstadoReserva.Liberada)
@@ -290,11 +275,9 @@ namespace ConviTEC.Servicios
         {
             lock (_bloqueo)
             {
-                int pos = BuscarReserva(Limpiar(idPedido));
-                if (pos == -1)
+                if (!_reservas.IntentarObtener(Limpiar(idPedido), out Reserva reserva))
                     return false;
 
-                Reserva reserva = _reservas[pos];
                 if (reserva.Estado == EstadoReserva.Liberada)
                     return true;
                 if (reserva.Estado == EstadoReserva.Confirmada)
@@ -313,8 +296,7 @@ namespace ConviTEC.Servicios
             if (items == null)
                 return [];
 
-            ItemCantidad[] resultado = new ItemCantidad[items.Length];
-            int n = 0;
+            ListaDinamica<ItemCantidad> resultado = new();
 
             foreach (ItemCantidad item in items)
             {
@@ -325,23 +307,16 @@ namespace ConviTEC.Servicios
                 if (codigo.Length == 0)
                     continue;
 
-                int pos = -1;
-                for (int i = 0; i < n; i++)
-                {
-                    if (string.Equals(resultado[i].CodigoProducto, codigo, StringComparison.OrdinalIgnoreCase))
-                    {
-                        pos = i;
-                        break;
-                    }
-                }
+                int pos = resultado.BuscarIndice(r =>
+                    string.Equals(r.CodigoProducto, codigo, StringComparison.OrdinalIgnoreCase));
 
                 if (pos == -1)
-                    resultado[n++] = new ItemCantidad { CodigoProducto = codigo, Cantidad = item.Cantidad };
+                    resultado.Agregar(new ItemCantidad { CodigoProducto = codigo, Cantidad = item.Cantidad });
                 else
-                    resultado[pos].Cantidad += item.Cantidad;
+                    resultado.Obtener(pos).Cantidad += item.Cantidad;
             }
 
-            return Arreglos.Copiar(resultado, n);
+            return resultado.ComoArreglo();
         }
     }
 }
