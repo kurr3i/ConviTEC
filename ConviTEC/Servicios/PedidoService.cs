@@ -20,8 +20,7 @@ namespace ConviTEC.Servicios
         private class Asignacion
         {
             public string Sede = "";
-            public ItemCantidad[] Items = [];
-            public int Cantidad;
+            public ListaDinamica<ItemCantidad> Items = new();
         }
 
         private readonly InventarioService _inventario;
@@ -130,20 +129,20 @@ namespace ConviTEC.Servicios
         }
 
         // Libera lo propio y avisa a las sedes contactadas (Liberar es idempotente: no hace daño de más)
-        private async Task<Pedido> CancelarAsync(Pedido pedido, string motivo, string[] contactadas, int cantidad)
+        private async Task<Pedido> CancelarAsync(Pedido pedido, string motivo, string[] contactadas)
         {
             _inventario.Liberar(pedido.Id);
 
-            for (int i = 0; i < cantidad; i++)
+            foreach (string sede in contactadas)
             {
                 try
                 {
-                    await _enviar(Mensaje.Crear(TipoMensaje.LiberarReserva, _codigoSede, contactadas[i],
+                    await _enviar(Mensaje.Crear(TipoMensaje.LiberarReserva, _codigoSede, sede,
                                                 new LiberarReserva { IdPedido = pedido.Id }));
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Pedidos] No se pudo enviar LiberarReserva a {contactadas[i]}: {ex.Message}");
+                    Console.Error.WriteLine($"[Pedidos] No se pudo enviar LiberarReserva a {sede}: {ex.Message}");
                 }
             }
 
@@ -181,7 +180,7 @@ namespace ConviTEC.Servicios
             }
             return resultado.ComoArreglo();
         }
-        
+
         private static int CantidadDe(ItemCantidad[] items, string codigo)
         {
             int total = 0;
@@ -194,56 +193,50 @@ namespace ConviTEC.Servicios
         }
 
         // True si lo reservado cubre todo lo pedido
-        private static bool Cubre(ItemCantidad[] reservados, ItemCantidad[] pedidos, int cantidadPedidos)
+        private static bool Cubre(ItemCantidad[] reservados, ItemCantidad[] pedidos)
         {
-            for (int i = 0; i < cantidadPedidos; i++)
+            foreach (ItemCantidad pedido in pedidos)
             {
-                if (CantidadDe(reservados, pedidos[i].CodigoProducto) < pedidos[i].Cantidad)
+                if (CantidadDe(reservados, pedido.CodigoProducto) < pedido.Cantidad)
                     return false;
             }
             return true;
         }
 
-        private static void AgregarAsignacion(ref Asignacion[] asignaciones, ref int cantidad,
+        private static void AgregarAsignacion(ListaDinamica<Asignacion> asignaciones,
                                               string sede, string codigoProducto, int unidades)
         {
-            Asignacion? existente = null;
-            for (int i = 0; i < cantidad; i++)
+            int pos = asignaciones.BuscarIndice(a => a.Sede == sede);
+            Asignacion asignacion;
+
+            if (pos == -1)
             {
-                if (asignaciones[i].Sede == sede)
-                {
-                    existente = asignaciones[i];
-                    break;
-                }
+                asignacion = new Asignacion { Sede = sede };
+                asignaciones.Agregar(asignacion);
+            }
+            else
+            {
+                asignacion = asignaciones.Obtener(pos);
             }
 
-            if (existente == null)
-            {
-                existente = new Asignacion { Sede = sede };
-                Arreglos.Agregar(ref asignaciones, ref cantidad, existente);
-            }
-
-            Arreglos.Agregar(ref existente.Items, ref existente.Cantidad,
-                             new ItemCantidad { CodigoProducto = codigoProducto, Cantidad = unidades });
+            asignacion.Items.Agregar(new ItemCantidad { CodigoProducto = codigoProducto, Cantidad = unidades });
         }
+
         // Una línea por producto y sede de origen, con el precio del catálogo
-        private DetallePedido[] ConstruirDetalle(ItemCantidad[] locales, Asignacion[] asignaciones, int cantidadAsignaciones)
+        private DetallePedido[] ConstruirDetalle(ItemCantidad[] locales, ListaDinamica<Asignacion> asignaciones)
         {
-            DetallePedido[] detalle = new DetallePedido[4];
-            int n = 0;
+            ListaDinamica<DetallePedido> detalle = new();
 
             foreach (ItemCantidad local in locales)
-                Arreglos.Agregar(ref detalle, ref n, NuevaLinea(local.CodigoProducto, local.Cantidad, _codigoSede));
+                detalle.Agregar(NuevaLinea(local.CodigoProducto, local.Cantidad, _codigoSede));
 
-            for (int i = 0; i < cantidadAsignaciones; i++)
+            foreach (Asignacion asignacion in asignaciones.ComoArreglo())
             {
-                Asignacion asignacion = asignaciones[i];
-                for (int j = 0; j < asignacion.Cantidad; j++)
-                    Arreglos.Agregar(ref detalle, ref n,
-                        NuevaLinea(asignacion.Items[j].CodigoProducto, asignacion.Items[j].Cantidad, asignacion.Sede));
+                foreach (ItemCantidad item in asignacion.Items.ComoArreglo())
+                    detalle.Agregar(NuevaLinea(item.CodigoProducto, item.Cantidad, asignacion.Sede));
             }
 
-            return Arreglos.Copiar(detalle, n);
+            return detalle.ComoArreglo();
         }
 
         private DetallePedido NuevaLinea(string codigo, int cantidad, string sedeOrigen)
@@ -290,46 +283,41 @@ namespace ConviTEC.Servicios
             ItemCantidad[] faltantes = Restar(items, locales);
 
             // 3. Repartir lo que falta entre las otras sedes, siempre empezando por la que más tiene
-            Asignacion[] asignaciones = new Asignacion[4];
-            int cantidadAsignaciones = 0;
+            ListaDinamica<Asignacion> asignaciones = new();
 
             foreach (ItemCantidad faltante in faltantes)
             {
                 int restante = faltante.Cantidad;
-                string[] excluidas = new string[4];
-                int cantidadExcluidas = 0;
-                Arreglos.Agregar(ref excluidas, ref cantidadExcluidas, _codigoSede);
+                ListaDinamica<string> excluidas = new();
+                excluidas.Agregar(_codigoSede);
 
                 while (restante > 0)
                 {
-                    string? sede = _global.SedeConMas(faltante.CodigoProducto,
-                                                      Arreglos.Copiar(excluidas, cantidadExcluidas));
+                    string? sede = _global.SedeConMas(faltante.CodigoProducto, excluidas.ComoArreglo());
                     if (sede == null)
                         return await CancelarAsync(pedido,
-                            $"No hay existencias suficientes de '{faltante.CodigoProducto}' en la red de sedes.", [], 0);
+                            $"No hay existencias suficientes de '{faltante.CodigoProducto}' en la red de sedes.", []);
 
                     int toma = Math.Min(_global.Disponible(sede, faltante.CodigoProducto), restante);
-                    AgregarAsignacion(ref asignaciones, ref cantidadAsignaciones, sede, faltante.CodigoProducto, toma);
+                    AgregarAsignacion(asignaciones, sede, faltante.CodigoProducto, toma);
                     restante -= toma;
-                    Arreglos.Agregar(ref excluidas, ref cantidadExcluidas, sede);
+                    excluidas.Agregar(sede);
                 }
             }
 
             // 4. Pedir a cada sede. Cualquier fallo cancela todo; a las sedes contactadas se les avisa
             // aunque no hayan respondido, porque podrían haber reservado cuando ya no esperábamos.
-            string[] contactadas = new string[4];
-            int cantidadContactadas = 0;
+            ListaDinamica<string> contactadas = new();
 
-            for (int i = 0; i < cantidadAsignaciones; i++)
+            foreach (Asignacion asignacion in asignaciones.ComoArreglo())
             {
-                Asignacion asignacion = asignaciones[i];
-                Arreglos.Agregar(ref contactadas, ref cantidadContactadas, asignacion.Sede);
+                contactadas.Agregar(asignacion.Sede);
 
                 Mensaje solicitud = Mensaje.Crear(TipoMensaje.SolicitudReserva, _codigoSede, asignacion.Sede,
                     new SolicitudReserva
                     {
                         IdPedido = pedido.Id,
-                        Items = Arreglos.Copiar(asignacion.Items, asignacion.Cantidad)
+                        Items = asignacion.Items.ComoArreglo()
                     });
 
                 RespuestaReserva? respuesta;
@@ -340,39 +328,39 @@ namespace ConviTEC.Servicios
                 }
                 catch (TimeoutException ex)
                 {
-                    return await CancelarAsync(pedido, ex.Message, contactadas, cantidadContactadas);
+                    return await CancelarAsync(pedido, ex.Message, contactadas.ComoArreglo());
                 }
                 catch (Exception ex)
                 {
                     return await CancelarAsync(pedido,
                         $"Error de comunicación con la sede {asignacion.Sede}: {ex.Message}",
-                        contactadas, cantidadContactadas);
+                        contactadas.ComoArreglo());
                 }
 
-                if (respuesta == null || !Cubre(respuesta.Reservados ?? [], asignacion.Items, asignacion.Cantidad))
+                if (respuesta == null || !Cubre(respuesta.Reservados ?? [], asignacion.Items.ComoArreglo()))
                 {
                     string detalle = string.IsNullOrWhiteSpace(respuesta?.Motivo)
                         ? "no pudo reservar todo lo solicitado"
                         : respuesta.Motivo;
                     return await CancelarAsync(pedido, $"La sede {asignacion.Sede}: {detalle}",
-                                               contactadas, cantidadContactadas);
+                                               contactadas.ComoArreglo());
                 }
             }
 
             // 5. Todo reservado: confirmar en todas partes
             pedido.Estado = EstadoPedido.Reservado;
-            pedido.Detalle = ConstruirDetalle(locales, asignaciones, cantidadAsignaciones);
+            pedido.Detalle = ConstruirDetalle(locales, asignaciones);
 
-            for (int i = 0; i < cantidadContactadas; i++)
+            foreach (string sedeContactada in contactadas.ComoArreglo())
             {
                 try
                 {
-                    await _enviar(Mensaje.Crear(TipoMensaje.ConfirmarReserva, _codigoSede, contactadas[i],
+                    await _enviar(Mensaje.Crear(TipoMensaje.ConfirmarReserva, _codigoSede, sedeContactada,
                                                 new ConfirmarReserva { IdPedido = pedido.Id }));
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"[Pedidos] No se pudo enviar ConfirmarReserva a {contactadas[i]}: {ex.Message}");
+                    Console.Error.WriteLine($"[Pedidos] No se pudo enviar ConfirmarReserva a {sedeContactada}: {ex.Message}");
                 }
             }
 
