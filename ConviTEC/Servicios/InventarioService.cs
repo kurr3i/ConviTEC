@@ -22,36 +22,21 @@ namespace ConviTEC.Servicios
             public EstadoReserva Estado;
         }
 
-        private Producto[] _productos = new Producto[8];
-        private int _cantidadProductos;
-        private ItemInventario[] _items = new ItemInventario[8];
-        private int _cantidadItems;
+        // Clave: el código en mayúsculas, así la búsqueda no distingue mayúsculas de minúsculas
+        private readonly ArbolAVL<string, Producto> _productos = new();
+        private readonly ArbolAVL<string, ItemInventario> _items = new();
         private Reserva[] _reservas = new Reserva[8];
         private int _cantidadReservas;
 
         // Los manejadores de mensajes y la API usan el servicio al mismo tiempo
         private readonly object _bloqueo = new();
 
-        // ---------- Búsquedas (lo único que cambia al usar TablaHash o AVL) ----------
 
-        private int BuscarProducto(string codigo)
-        {
-            for (int i = 0; i < _cantidadProductos; i++)
-            {
-                if (string.Equals(_productos[i].Codigo, codigo, StringComparison.OrdinalIgnoreCase))
-                    return i;
-            }
-            return -1;
-        }
+        // ---------- Búsquedas ----------
 
-        private int BuscarItem(string codigo)
+        private static string Clave(string? codigo)
         {
-            for (int i = 0; i < _cantidadItems; i++)
-            {
-                if (string.Equals(_items[i].Codigo, codigo, StringComparison.OrdinalIgnoreCase))
-                    return i;
-            }
-            return -1;
+            return Limpiar(codigo).ToUpperInvariant();
         }
 
         private int BuscarReserva(string idPedido)
@@ -112,7 +97,7 @@ namespace ConviTEC.Servicios
 
             lock (_bloqueo)
             {
-                if (BuscarProducto(codigo) != -1)
+                if (_productos.Contiene(Clave(codigo)))
                     throw new ArgumentException($"Ya existe un producto con el código '{codigo}'.");
 
                 var copia = new Producto
@@ -123,8 +108,8 @@ namespace ConviTEC.Servicios
                     Categoria = producto.Categoria,
                     Precio = producto.Precio
                 };
-                Arreglos.Agregar(ref _productos, ref _cantidadProductos, copia);
-                Arreglos.Agregar(ref _items, ref _cantidadItems, new ItemInventario { Codigo = codigo });
+                _productos.Insertar(Clave(codigo), copia);
+                _items.Insertar(Clave(codigo), new ItemInventario { Codigo = codigo });
             }
         }
 
@@ -133,8 +118,9 @@ namespace ConviTEC.Servicios
         {
             lock (_bloqueo)
             {
-                int pos = BuscarProducto(Limpiar(codigo));
-                return pos == -1 ? null : CopiarProducto(_productos[pos]);
+                return _productos.IntentarObtener(Clave(codigo), out Producto producto)
+                    ? CopiarProducto(producto)
+                    : null;
             }
         }
 
@@ -142,9 +128,11 @@ namespace ConviTEC.Servicios
         {
             lock (_bloqueo)
             {
-                Producto[] copia = new Producto[_cantidadProductos];
-                for (int i = 0; i < _cantidadProductos; i++)
-                    copia[i] = CopiarProducto(_productos[i]);
+                // Salen ordenados por código
+                Producto[] productos = _productos.ValoresEnOrden();
+                Producto[] copia = new Producto[productos.Length];
+                for (int i = 0; i < productos.Length; i++)
+                    copia[i] = CopiarProducto(productos[i]);
                 return copia;
             }
         }
@@ -158,12 +146,11 @@ namespace ConviTEC.Servicios
 
             lock (_bloqueo)
             {
-                int pos = BuscarItem(Limpiar(codigo));
-                if (pos == -1)
+                if (!_items.IntentarObtener(Clave(codigo), out ItemInventario item))
                     throw new ArgumentException($"El producto '{codigo}' no está registrado en el catálogo.");
 
-                _items[pos].Total += cantidad;
-                return CopiarItem(_items[pos]);
+                item.Total += cantidad;
+                return CopiarItem(item);
             }
         }
 
@@ -172,8 +159,9 @@ namespace ConviTEC.Servicios
         {
             lock (_bloqueo)
             {
-                int pos = BuscarItem(Limpiar(codigo));
-                return pos == -1 ? null : CopiarItem(_items[pos]);
+                return _items.IntentarObtener(Clave(codigo), out ItemInventario item)
+                    ? CopiarItem(item)
+                    : null;
             }
         }
 
@@ -181,9 +169,10 @@ namespace ConviTEC.Servicios
         {
             lock (_bloqueo)
             {
-                ItemInventario[] copia = new ItemInventario[_cantidadItems];
-                for (int i = 0; i < _cantidadItems; i++)
-                    copia[i] = CopiarItem(_items[i]);
+                ItemInventario[] items = _items.ValoresEnOrden();
+                ItemInventario[] copia = new ItemInventario[items.Length];
+                for (int i = 0; i < items.Length; i++)
+                    copia[i] = CopiarItem(items[i]);
                 return copia;
             }
         }
@@ -192,13 +181,14 @@ namespace ConviTEC.Servicios
         {
             lock (_bloqueo)
             {
-                ItemCantidad[] disponibles = new ItemCantidad[_cantidadItems];
-                for (int i = 0; i < _cantidadItems; i++)
+                ItemInventario[] items = _items.ValoresEnOrden();
+                ItemCantidad[] disponibles = new ItemCantidad[items.Length];
+                for (int i = 0; i < items.Length; i++)
                 {
                     disponibles[i] = new ItemCantidad
                     {
-                        CodigoProducto = _items[i].Codigo,
-                        Cantidad = _items[i].Disponible
+                        CodigoProducto = items[i].Codigo,
+                        Cantidad = items[i].Disponible
                     };
                 }
                 return disponibles;
@@ -213,11 +203,9 @@ namespace ConviTEC.Servicios
 
             lock (_bloqueo)
             {
-                int pos = BuscarItem(Limpiar(codigo));
-                if (pos == -1)
+                if (!_items.IntentarObtener(Clave(codigo), out ItemInventario item))
                     throw new ArgumentException($"El producto '{codigo}' no existe.");
 
-                ItemInventario item = _items[pos];
                 if (item.Disponible < cantidad)
                     throw new InvalidOperationException(
                         $"No hay existencias suficientes de '{item.Codigo}': disponible {item.Disponible}, solicitado {cantidad}.");
@@ -251,11 +239,9 @@ namespace ConviTEC.Servicios
                     if (pedido == null || pedido.Cantidad <= 0)
                         continue;
 
-                    int pos = BuscarItem(Limpiar(pedido.CodigoProducto));
-                    if (pos == -1)
+                    if (!_items.IntentarObtener(Clave(pedido.CodigoProducto), out ItemInventario item))
                         continue;
 
-                    ItemInventario item = _items[pos];
                     int cantidad = Math.Min(pedido.Cantidad, item.Disponible);
                     if (cantidad <= 0)
                         continue;
@@ -289,7 +275,7 @@ namespace ConviTEC.Servicios
 
                 foreach (ItemCantidad linea in reserva.Items)
                 {
-                    ItemInventario item = _items[BuscarItem(linea.CodigoProducto)];
+                    ItemInventario item = _items.Obtener(Clave(linea.CodigoProducto));
                     item.Reservado -= linea.Cantidad;
                     item.Total -= linea.Cantidad;
                 }
@@ -315,7 +301,7 @@ namespace ConviTEC.Servicios
                     return false;
 
                 foreach (ItemCantidad linea in reserva.Items)
-                    _items[BuscarItem(linea.CodigoProducto)].Reservado -= linea.Cantidad;
+                    _items.Obtener(Clave(linea.CodigoProducto)).Reservado -= linea.Cantidad;
 
                 reserva.Estado = EstadoReserva.Liberada;
                 return true;
